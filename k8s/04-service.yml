@@ -1,0 +1,16 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: "dev-global-databot"
+  labels:
+    name: "dev-global-databot"
+spec:
+  type: ClusterIP
+  selector:
+    name: "dev-global-databot"
+  ports:
+  - name: gateway
+    port: 18790
+    targetPort: 18790
+    protocol: TCP

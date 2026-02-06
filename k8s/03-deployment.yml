@@ -1,0 +1,109 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "dev-global-databot"
+  labels:
+    name: "dev-global-databot"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: "dev-global-databot"
+  template:
+    metadata:
+      name: "dev-global-databot"
+      labels:
+        name: "dev-global-databot"
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      tolerations:
+      - key: "group"
+        operator: "Equal"
+        value: "stateful"
+        effect: "NoSchedule"
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: group
+                operator: In
+                values:
+                - "stateful"
+      containers:
+      - name: "gateway"
+        image: ghcr.io/asb108/databot:latest
+        imagePullPolicy: "Always"
+        command: ["databot"]
+        args: ["gateway", "--port", "18790"]
+        env:
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: "dev-global-databot-env"
+              key: anthropicApiKey
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: "dev-global-databot-env"
+              key: openaiApiKey
+              optional: true
+        - name: GCHAT_WEBHOOK_URL
+          valueFrom:
+            secretKeyRef:
+              name: "dev-global-databot-env"
+              key: gchatWebhookUrl
+              optional: true
+        ports:
+        - name: gateway
+          containerPort: 18790
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 18790
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 18790
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          limits:
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 256Mi
+        volumeMounts:
+        - name: data
+          mountPath: /root/.databot
+        - name: config
+          mountPath: /root/.databot/config.yaml
+          subPath: config.yaml
+      volumes:
+      - name: config
+        configMap:
+          name: "dev-global-databot-config"
+      - name: data
+        persistentVolumeClaim:
+          claimName: "dev-global-databot-data"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: "dev-global-databot-data"
+  labels:
+    name: "dev-global-databot"
+spec:
+  accessModes:
+    - "ReadWriteOnce"
+  resources:
+    requests:
+      storage: "5Gi"

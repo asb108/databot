@@ -1,0 +1,13 @@
+[project]
+name = "databot-example-plugin"
+version = "0.1.0"
+description = "Example plugin demonstrating how to create custom tools for databot"
+requires-python = ">=3.11"
+dependencies = ["databot"]
+
+[project.entry-points."databot.tools"]
+hello_world = "example_plugin.tools:HelloWorldTool"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -1,0 +1,48 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "dev-global-databot-config"
+  labels:
+    name: "dev-global-databot"
+data:
+  config.yaml: |
+    providers:
+      default: anthropic
+      anthropic:
+        api_key: ${ANTHROPIC_API_KEY}
+        model: claude-sonnet-4-5-20250929
+
+    channels:
+      gchat:
+        enabled: true
+        mode: webhook
+        webhook_url: ${GCHAT_WEBHOOK_URL}
+
+    tools:
+      sql:
+        connections: {}
+        read_only: true
+        max_rows: 1000
+
+      airflow:
+        base_url: ""
+        username: ""
+        password: ""
+
+      shell:
+        enabled: true
+        restrict_to_workspace: true
+        timeout: 30
+
+    cron:
+      jobs: []
+
+    security:
+      restrict_to_workspace: true
+      allowed_commands:
+        - kubectl
+        - airflow
+
+    agent:
+      max_iterations: 20

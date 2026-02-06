@@ -1,0 +1,51 @@
+# databot configuration
+# Docs: https://github.com/asb108/databot
+
+providers:
+  default: anthropic
+  anthropic:
+    api_key: ${ANTHROPIC_API_KEY}
+    model: claude-sonnet-4-5-20250929
+  openai:
+    api_key: ${OPENAI_API_KEY}
+    model: gpt-4o
+  deepseek:
+    api_key: ${DEEPSEEK_API_KEY}
+    model: deepseek-chat
+
+channels:
+  gchat:
+    enabled: false
+    mode: webhook
+    webhook_url: ${GCHAT_WEBHOOK_URL}
+
+tools:
+  sql:
+    connections: {}
+    read_only: true
+    max_rows: 1000
+
+  airflow:
+    base_url: ""
+    username: ""
+    password: ""
+
+  lineage:
+    graph_path: ""
+
+  shell:
+    enabled: true
+    restrict_to_workspace: true
+    timeout: 30
+    allowed_commands: []
+
+cron:
+  jobs: []
+
+security:
+  restrict_to_workspace: true
+  allowed_commands: []
+
+agent:
+  max_iterations: 20
+  system_prompt: ""
