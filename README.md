@@ -1,5 +1,10 @@
 # databot
 
+[![CI](https://github.com/asb108/databot/actions/workflows/ci.yml/badge.svg)](https://github.com/asb108/databot/actions/workflows/ci.yml)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![PyPI](https://img.shields.io/pypi/v/databot.svg)](https://pypi.org/project/databot/)
+
 A lightweight, open-source AI assistant for data platform operations.
 
 **~4,000 lines of core code** -- built for data engineers who need an intelligent assistant
