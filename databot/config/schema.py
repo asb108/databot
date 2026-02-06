@@ -1,4 +1,5 @@
 """Configuration schema for databot."""
+
 from __future__ import annotations
 
 import os
@@ -31,6 +32,7 @@ def _resolve_env_vars(value: Any) -> Any:
 # Provider configuration
 # ---------------------------------------------------------------------------
 
+
 class ProviderConfig(BaseModel):
     api_key: str = ""
     model: str = ""
@@ -42,18 +44,15 @@ class ProvidersConfig(BaseModel):
     anthropic: ProviderConfig = Field(
         default_factory=lambda: ProviderConfig(model="claude-sonnet-4-5-20250929")
     )
-    openai: ProviderConfig = Field(
-        default_factory=lambda: ProviderConfig(model="gpt-4o")
-    )
-    deepseek: ProviderConfig = Field(
-        default_factory=lambda: ProviderConfig(model="deepseek-chat")
-    )
+    openai: ProviderConfig = Field(default_factory=lambda: ProviderConfig(model="gpt-4o"))
+    deepseek: ProviderConfig = Field(default_factory=lambda: ProviderConfig(model="deepseek-chat"))
     custom: dict[str, ProviderConfig] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
 # Channel configuration
 # ---------------------------------------------------------------------------
+
 
 class GChatConfig(BaseModel):
     enabled: bool = False
@@ -70,6 +69,7 @@ class ChannelsConfig(BaseModel):
 # ---------------------------------------------------------------------------
 # Tool configuration
 # ---------------------------------------------------------------------------
+
 
 class SQLConnectionConfig(BaseModel):
     driver: str = "mysql"
@@ -117,6 +117,7 @@ class ToolsConfig(BaseModel):
 # Cron configuration
 # ---------------------------------------------------------------------------
 
+
 class CronJobConfig(BaseModel):
     name: str
     schedule: str
@@ -133,6 +134,7 @@ class CronConfig(BaseModel):
 # Security configuration
 # ---------------------------------------------------------------------------
 
+
 class SecurityConfig(BaseModel):
     restrict_to_workspace: bool = True
     allowed_commands: list[str] = Field(default_factory=list)
@@ -142,6 +144,7 @@ class SecurityConfig(BaseModel):
 # Agent configuration
 # ---------------------------------------------------------------------------
 
+
 class AgentConfig(BaseModel):
     max_iterations: int = 20
     system_prompt: str = ""
@@ -150,6 +153,7 @@ class AgentConfig(BaseModel):
 # ---------------------------------------------------------------------------
 # Root configuration
 # ---------------------------------------------------------------------------
+
 
 class DatabotConfig(BaseModel):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)

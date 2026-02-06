@@ -1,10 +1,10 @@
 """Airflow tool for DAG operations via REST API."""
+
 from __future__ import annotations
 
 from typing import Any
 
 import httpx
-from loguru import logger
 
 from databot.tools.base import BaseTool
 
@@ -140,9 +140,7 @@ class AirflowTool(BaseTool):
         return "\n".join(lines)
 
     async def _task_status(self, dag_id: str, run_id: str) -> str:
-        data = await self._request(
-            "GET", f"/dags/{dag_id}/dagRuns/{run_id}/taskInstances"
-        )
+        data = await self._request("GET", f"/dags/{dag_id}/dagRuns/{run_id}/taskInstances")
         tasks = data.get("task_instances", [])
         if not tasks:
             return "No task instances found."
@@ -157,8 +155,7 @@ class AirflowTool(BaseTool):
 
     async def _task_log(self, dag_id: str, run_id: str, task_id: str) -> str:
         url = (
-            f"{self._base_url}/api/v1/dags/{dag_id}/dagRuns/{run_id}"
-            f"/taskInstances/{task_id}/logs/1"
+            f"{self._base_url}/api/v1/dags/{dag_id}/dagRuns/{run_id}/taskInstances/{task_id}/logs/1"
         )
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(

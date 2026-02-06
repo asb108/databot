@@ -1,4 +1,5 @@
 """SQLite-backed cron job store."""
+
 from __future__ import annotations
 
 import sqlite3

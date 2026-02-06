@@ -1,4 +1,5 @@
 """CLI commands for databot."""
+
 from __future__ import annotations
 
 import asyncio
@@ -99,9 +100,7 @@ def status():
     data_dir = _get_data_dir()
 
     console.print("[bold]databot status[/]\n")
-    console.print(
-        f"  Config: {config_path} ({'exists' if config_path.exists() else 'not found'})"
-    )
+    console.print(f"  Config: {config_path} ({'exists' if config_path.exists() else 'not found'})")
     console.print(f"  Data dir: {data_dir} ({'exists' if data_dir.exists() else 'not found'})")
 
     if config_path.exists():

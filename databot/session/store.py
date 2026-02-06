@@ -1,4 +1,5 @@
 """SQLite-backed session store."""
+
 from __future__ import annotations
 
 import json
@@ -29,9 +30,7 @@ class SessionStore:
 
     def get_history(self, key: str) -> list[dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                "SELECT history FROM sessions WHERE key = ?", (key,)
-            ).fetchone()
+            row = conn.execute("SELECT history FROM sessions WHERE key = ?", (key,)).fetchone()
             if row:
                 return json.loads(row[0])
             return []
@@ -57,7 +56,5 @@ class SessionStore:
 
     def list_keys(self) -> list[str]:
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                "SELECT key FROM sessions ORDER BY updated_at DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT key FROM sessions ORDER BY updated_at DESC").fetchall()
             return [row[0] for row in rows]

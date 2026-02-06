@@ -1,4 +1,5 @@
 """Session manager for conversation history."""
+
 from __future__ import annotations
 
 from pathlib import Path

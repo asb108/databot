@@ -1,4 +1,5 @@
 """Tool base class and registry."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -78,15 +79,15 @@ class ToolRegistry:
 
     def load_plugins(self, **kwargs: Any) -> int:
         """Load and register tools from entry points.
-        
+
         Args:
             **kwargs: Arguments passed to tool constructors (e.g., workspace, config).
-            
+
         Returns:
             Number of plugins loaded.
         """
         from databot.plugins.loader import discover_tools
-        
+
         loaded = 0
         for tool_class in discover_tools():
             try:
@@ -99,7 +100,7 @@ class ToolRegistry:
                 loaded += 1
             except Exception as e:
                 logger.warning(f"Failed to instantiate tool plugin {tool_class}: {e}")
-        
+
         if loaded > 0:
             logger.info(f"Loaded {loaded} tool plugin(s)")
         return loaded
@@ -107,4 +108,3 @@ class ToolRegistry:
     @property
     def tool_names(self) -> list[str]:
         return list(self._tools.keys())
-

@@ -112,10 +112,12 @@ class ContextBuilder:
         result: str,
     ) -> list[dict]:
         """Add a tool result to the message list."""
-        messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "name": name,
-            "content": result,
-        })
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": tool_call_id,
+                "name": name,
+                "content": result,
+            }
+        )
         return messages

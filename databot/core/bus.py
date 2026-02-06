@@ -1,9 +1,10 @@
 """Message bus for inter-component communication."""
+
 from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable
 
 
 @dataclass

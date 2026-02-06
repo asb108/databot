@@ -1,4 +1,5 @@
 """SQL query tool for data platform databases."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -58,8 +59,15 @@ class SQLTool(BaseTool):
         if self._read_only:
             normalized = query.strip().upper()
             forbidden = [
-                "INSERT", "UPDATE", "DELETE", "DROP", "ALTER",
-                "CREATE", "TRUNCATE", "GRANT", "REVOKE",
+                "INSERT",
+                "UPDATE",
+                "DELETE",
+                "DROP",
+                "ALTER",
+                "CREATE",
+                "TRUNCATE",
+                "GRANT",
+                "REVOKE",
             ]
             first_word = normalized.split()[0] if normalized else ""
             if first_word in forbidden:

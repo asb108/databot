@@ -1,4 +1,5 @@
 """Google Chat channel: webhook and app modes."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -99,9 +100,7 @@ class GChatChannel(BaseChannel):
                 )
                 await self.bus.publish_inbound(inbound)
 
-                return {
-                    "text": "Processing your request... I'll post the response shortly."
-                }
+                return {"text": "Processing your request... I'll post the response shortly."}
 
             elif event_type == "ADDED_TO_SPACE":
                 return {

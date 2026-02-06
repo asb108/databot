@@ -1,4 +1,5 @@
 """Web tools: search and fetch."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -69,8 +70,7 @@ class WebSearchTool(BaseTool):
     async def execute(self, query: str) -> str:
         if not self._api_key:
             return (
-                "Error: Web search API key not configured. "
-                "Set tools.web.search_api_key in config."
+                "Error: Web search API key not configured. Set tools.web.search_api_key in config."
             )
 
         try:

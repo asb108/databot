@@ -1,11 +1,10 @@
 """Data lineage tool using NetworkX graph."""
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 from typing import Any
-
-from loguru import logger
 
 from databot.tools.base import BaseTool
 
@@ -25,9 +24,7 @@ class LineageTool(BaseTool):
         try:
             import networkx as nx
         except ImportError:
-            raise ImportError(
-                "networkx not installed. Install with: pip install databot[lineage]"
-            )
+            raise ImportError("networkx not installed. Install with: pip install databot[lineage]")
 
         if not self._graph_path or not Path(self._graph_path).exists():
             self._graph = nx.DiGraph()
@@ -38,9 +35,7 @@ class LineageTool(BaseTool):
 
         self._graph = nx.DiGraph()
         for node in data.get("nodes", []):
-            self._graph.add_node(
-                node["id"], **{k: v for k, v in node.items() if k != "id"}
-            )
+            self._graph.add_node(node["id"], **{k: v for k, v in node.items() if k != "id"})
         for edge in data.get("edges", []):
             self._graph.add_edge(
                 edge["source"],
@@ -96,10 +91,7 @@ class LineageTool(BaseTool):
             matches = [n for n in self._graph.nodes if table.lower() in n.lower()]
             if not matches:
                 return f"No tables matching '{table}'."
-            return (
-                f"**Tables matching '{table}':**\n"
-                + "\n".join(f"- `{m}`" for m in matches[:20])
-            )
+            return f"**Tables matching '{table}':**\n" + "\n".join(f"- `{m}`" for m in matches[:20])
 
         if table not in self._graph:
             matches = [n for n in self._graph.nodes if table.lower() in n.lower()]
@@ -156,9 +148,8 @@ class LineageTool(BaseTool):
 
             try:
                 path = nx.shortest_path(self._graph, table, target)
-                return (
-                    f"**Path from `{table}` to `{target}`:**\n"
-                    + " -> ".join(f"`{p}`" for p in path)
+                return f"**Path from `{table}` to `{target}`:**\n" + " -> ".join(
+                    f"`{p}`" for p in path
                 )
             except nx.NetworkXNoPath:
                 return f"No path found from `{table}` to `{target}`."

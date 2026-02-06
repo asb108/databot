@@ -1,4 +1,5 @@
 """Agent loop: the core processing engine."""
+
 from __future__ import annotations
 
 import asyncio
@@ -130,9 +131,7 @@ class AgentLoop:
                 for tc in response.tool_calls:
                     logger.debug(f"Executing tool: {tc.name}")
                     result = await self.tools.execute(tc.name, tc.arguments)
-                    messages = self.context.add_tool_result(
-                        messages, tc.id, tc.name, result
-                    )
+                    messages = self.context.add_tool_result(messages, tc.id, tc.name, result)
             else:
                 final_content = response.content
                 break

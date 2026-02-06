@@ -125,9 +125,7 @@ class DataQualityTool(BaseTool):
             FROM {table}
         """
         result = await self._sql.execute(query=query, connection=connection)
-        return (
-            f"**Freshness check for `{table}` (threshold: {threshold_hours}h):**\n{result}"
-        )
+        return f"**Freshness check for `{table}` (threshold: {threshold_hours}h):**\n{result}"
 
     async def _compare(
         self,

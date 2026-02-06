@@ -1,14 +1,14 @@
 """CLI channel for interactive terminal usage."""
+
 from __future__ import annotations
 
 import asyncio
 
-from loguru import logger
 from rich.console import Console
 from rich.markdown import Markdown
 
 from databot.channels.base import BaseChannel
-from databot.core.bus import InboundMessage, MessageBus, OutboundMessage
+from databot.core.bus import InboundMessage, MessageBus
 
 
 class CLIChannel(BaseChannel):

@@ -1,4 +1,5 @@
 """Filesystem tools: read, write, edit, list."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -46,9 +47,7 @@ class ReadFileTool(_FSBase):
             "required": ["path"],
         }
 
-    async def execute(
-        self, path: str, offset: int | None = None, limit: int | None = None
-    ) -> str:
+    async def execute(self, path: str, offset: int | None = None, limit: int | None = None) -> str:
         try:
             p = self._validate_path(path)
             if not p.exists():

@@ -1,4 +1,5 @@
 """Persistent memory manager using SQLite."""
+
 from __future__ import annotations
 
 import sqlite3
@@ -27,9 +28,7 @@ class MemoryManager:
 
     def get(self, key: str) -> str | None:
         with sqlite3.connect(self.db_path) as conn:
-            row = conn.execute(
-                "SELECT value FROM memory WHERE key = ?", (key,)
-            ).fetchone()
+            row = conn.execute("SELECT value FROM memory WHERE key = ?", (key,)).fetchone()
             return row[0] if row else None
 
     def set(self, key: str, value: str) -> None:
@@ -53,9 +52,7 @@ class MemoryManager:
 
     def get_all(self) -> dict[str, str]:
         with sqlite3.connect(self.db_path) as conn:
-            rows = conn.execute(
-                "SELECT key, value FROM memory ORDER BY updated_at DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT key, value FROM memory ORDER BY updated_at DESC").fetchall()
             return {row[0]: row[1] for row in rows}
 
     def clear(self) -> None:

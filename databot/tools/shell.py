@@ -1,4 +1,5 @@
 """Shell command execution tool."""
+
 from __future__ import annotations
 
 import asyncio
@@ -69,9 +70,7 @@ class ShellTool(BaseTool):
                 env=env,
             )
 
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=self._timeout
-            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
 
             output = ""
             if stdout:

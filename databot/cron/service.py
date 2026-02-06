@@ -1,4 +1,5 @@
 """Cron service for scheduled task execution."""
+
 from __future__ import annotations
 
 import asyncio
@@ -75,9 +76,7 @@ class CronService:
                     should_run = True
                 else:
                     if isinstance(last_run, str):
-                        last_run_dt = datetime.fromisoformat(last_run).replace(
-                            tzinfo=timezone.utc
-                        )
+                        last_run_dt = datetime.fromisoformat(last_run).replace(tzinfo=timezone.utc)
                     else:
                         last_run_dt = last_run
                     should_run = prev > last_run_dt
