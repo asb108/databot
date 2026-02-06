@@ -3,7 +3,7 @@
 [![CI](https://github.com/asb108/databot/actions/workflows/ci.yml/badge.svg)](https://github.com/asb108/databot/actions/workflows/ci.yml)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![PyPI](https://img.shields.io/pypi/v/databot.svg)](https://pypi.org/project/databot/)
+[![PyPI](https://img.shields.io/pypi/v/databot-ai.svg)](https://pypi.org/project/databot-ai/)
 
 A lightweight, open-source AI assistant for data platform operations.
 
@@ -28,7 +28,7 @@ for monitoring pipelines, diagnosing data quality issues, and querying infrastru
 
 ```bash
 # From PyPI
-pip install databot
+pip install databot-ai
 
 # From source (recommended for development)
 git clone https://github.com/asb108/databot.git
