@@ -10,6 +10,8 @@ A lightweight, open-source AI assistant for data platform operations.
 **~4,000 lines of core code** -- built for data engineers who need an intelligent assistant
 for monitoring pipelines, diagnosing data quality issues, and querying infrastructure.
 
+#### Deepwiki: https://deepwiki.com/asb108/databot/1-overview
+
 ## Features
 
 - **SQL Queries**: Execute read-only queries against Clickzetta, TiDB, Trino, or any SQL database
