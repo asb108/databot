@@ -103,9 +103,7 @@ class ConnectorRegistry:
     # Execution
     # ------------------------------------------------------------------
 
-    async def execute(
-        self, connector_name: str, operation: str, **params: Any
-    ) -> ConnectorResult:
+    async def execute(self, connector_name: str, operation: str, **params: Any) -> ConnectorResult:
         """Execute an operation on a named connector."""
         connector = self._connectors.get(connector_name)
         if connector is None:

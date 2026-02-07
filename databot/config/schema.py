@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 from pydantic import BaseModel, Field
@@ -36,7 +36,7 @@ def _resolve_env_vars(value: Any) -> Any:
 class ProviderConfig(BaseModel):
     api_key: str = ""
     model: str = ""
-    api_base: str | None = None
+    api_base: Optional[str] = None
 
 
 class ProvidersConfig(BaseModel):

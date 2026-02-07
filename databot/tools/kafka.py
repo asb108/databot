@@ -26,8 +26,7 @@ class KafkaTool(BaseTool):
     @property
     def description(self) -> str:
         kafka_connectors = [
-            c.name for c in self._registry.list_all()
-            if isinstance(c, KafkaConnector)
+            c.name for c in self._registry.list_all() if isinstance(c, KafkaConnector)
         ]
         names = ", ".join(kafka_connectors) if kafka_connectors else "none configured"
         return (
@@ -42,10 +41,14 @@ class KafkaTool(BaseTool):
                 "action": {
                     "type": "string",
                     "enum": [
-                        "list_topics", "describe_topic",
-                        "list_consumer_groups", "consumer_group_lag",
-                        "list_subjects", "get_schema",
-                        "list_connectors", "connector_status",
+                        "list_topics",
+                        "describe_topic",
+                        "list_consumer_groups",
+                        "consumer_group_lag",
+                        "list_subjects",
+                        "get_schema",
+                        "list_connectors",
+                        "connector_status",
                     ],
                     "description": "Kafka action to perform.",
                 },
@@ -91,6 +94,7 @@ class KafkaTool(BaseTool):
             if isinstance(result.data, str):
                 return result.data
             import json
+
             return json.dumps(result.data, indent=2, default=str)
         return "OK"
 
@@ -104,13 +108,12 @@ class KafkaTool(BaseTool):
                 return f"Error: Connector '{name}' is not a Kafka connector."
             return conn
 
-        kafka_connectors = [
-            c for c in self._registry.list_all()
-            if isinstance(c, KafkaConnector)
-        ]
+        kafka_connectors = [c for c in self._registry.list_all() if isinstance(c, KafkaConnector)]
         if len(kafka_connectors) == 0:
             return "Error: No Kafka connectors configured."
         if len(kafka_connectors) == 1:
             return kafka_connectors[0]
         names = ", ".join(c.name for c in kafka_connectors)
-        return f"Error: Multiple Kafka connectors configured ({names}). Specify 'connector' parameter."
+        return (
+            f"Error: Multiple Kafka connectors configured ({names}). Specify 'connector' parameter."
+        )

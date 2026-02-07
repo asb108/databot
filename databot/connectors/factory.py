@@ -26,22 +26,27 @@ def create_connector(name: str, config: dict[str, Any]) -> BaseConnector:
 
     if connector_type == "sql":
         from databot.connectors.sql_connector import SQLConnector
+
         return SQLConnector(name, config)
 
     elif connector_type == "rest_api":
         from databot.connectors.rest_connector import RESTConnector
+
         return RESTConnector(name, config)
 
     elif connector_type == "catalog":
         from databot.connectors.catalog_connector import CatalogConnector
+
         return CatalogConnector(name, config)
 
     elif connector_type in ("spark", "processing"):
         from databot.connectors.spark_connector import SparkConnector
+
         return SparkConnector(name, config)
 
     elif connector_type in ("kafka", "streaming"):
         from databot.connectors.kafka_connector import KafkaConnector
+
         return KafkaConnector(name, config)
 
     else:

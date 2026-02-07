@@ -38,7 +38,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         timestamps = self._requests[client_ip]
 
         if len(timestamps) >= self._rpm:
-            logger.warning(f"Rate limit exceeded for {client_ip}: {len(timestamps)}/{self._rpm} rpm")
+            logger.warning(
+                f"Rate limit exceeded for {client_ip}: {len(timestamps)}/{self._rpm} rpm"
+            )
             raise HTTPException(
                 status_code=429,
                 detail=f"Rate limit exceeded. Maximum {self._rpm} requests per minute.",

@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from loguru import logger
-
 from databot.connectors.base import ConnectorResult, ConnectorStatus, ConnectorType
 from databot.connectors.rest_connector import RESTConnector
 
@@ -43,7 +41,9 @@ class SparkConnector(RESTConnector):
             elif self._mode == "yarn":
                 result = await self.request("GET", "/ws/v1/cluster/info")
             else:
-                result = await self.request("GET", "/apis/sparkoperator.k8s.io/v1beta2/sparkapplications")
+                result = await self.request(
+                    "GET", "/apis/sparkoperator.k8s.io/v1beta2/sparkapplications"
+                )
             return ConnectorStatus.HEALTHY if result.success else ConnectorStatus.DEGRADED
         except Exception:
             return ConnectorStatus.UNREACHABLE
@@ -66,9 +66,13 @@ class SparkConnector(RESTConnector):
             return await self._livy_submit_batch(file, class_name, args, conf, name)
         elif self._mode == "k8s":
             return await self._k8s_submit(file, class_name, args, conf, name)
-        return ConnectorResult(success=False, error=f"submit_batch not supported in {self._mode} mode")
+        return ConnectorResult(
+            success=False, error=f"submit_batch not supported in {self._mode} mode"
+        )
 
-    async def _op_batch_status(self, batch_id: str = "", app_id: str = "", **kwargs: Any) -> ConnectorResult:
+    async def _op_batch_status(
+        self, batch_id: str = "", app_id: str = "", **kwargs: Any
+    ) -> ConnectorResult:
         """Get batch job status."""
         if self._mode == "livy":
             return await self.request("GET", f"/batches/{batch_id}")
@@ -76,13 +80,20 @@ class SparkConnector(RESTConnector):
             return await self.request("GET", f"/ws/v1/cluster/apps/{app_id}")
         elif self._mode == "k8s":
             ns = self._config.get("namespace", "default")
-            return await self.request("GET", f"/apis/sparkoperator.k8s.io/v1beta2/namespaces/{ns}/sparkapplications/{app_id}")
+            return await self.request(
+                "GET",
+                f"/apis/sparkoperator.k8s.io/v1beta2/namespaces/{ns}/sparkapplications/{app_id}",
+            )
         return ConnectorResult(success=False, error="Unknown mode")
 
-    async def _op_batch_logs(self, batch_id: str = "", app_id: str = "", **kwargs: Any) -> ConnectorResult:
+    async def _op_batch_logs(
+        self, batch_id: str = "", app_id: str = "", **kwargs: Any
+    ) -> ConnectorResult:
         """Get batch job logs."""
         if self._mode == "livy":
-            result = await self.request("GET", f"/batches/{batch_id}/log", params={"from": 0, "size": 200})
+            result = await self.request(
+                "GET", f"/batches/{batch_id}/log", params={"from": 0, "size": 200}
+            )
             if result.success and isinstance(result.data, dict):
                 log_lines = result.data.get("log", [])
                 return ConnectorResult(data="\n".join(log_lines))
@@ -91,15 +102,22 @@ class SparkConnector(RESTConnector):
             return await self.request("GET", f"/ws/v1/cluster/apps/{app_id}/appattempts")
         return ConnectorResult(success=False, error="Logs not available in this mode")
 
-    async def _op_kill_batch(self, batch_id: str = "", app_id: str = "", **kwargs: Any) -> ConnectorResult:
+    async def _op_kill_batch(
+        self, batch_id: str = "", app_id: str = "", **kwargs: Any
+    ) -> ConnectorResult:
         """Kill a running batch job."""
         if self._mode == "livy":
             return await self.request("DELETE", f"/batches/{batch_id}")
         elif self._mode == "yarn":
-            return await self.request("PUT", f"/ws/v1/cluster/apps/{app_id}/state", json={"state": "KILLED"})
+            return await self.request(
+                "PUT", f"/ws/v1/cluster/apps/{app_id}/state", json={"state": "KILLED"}
+            )
         elif self._mode == "k8s":
             ns = self._config.get("namespace", "default")
-            return await self.request("DELETE", f"/apis/sparkoperator.k8s.io/v1beta2/namespaces/{ns}/sparkapplications/{app_id}")
+            return await self.request(
+                "DELETE",
+                f"/apis/sparkoperator.k8s.io/v1beta2/namespaces/{ns}/sparkapplications/{app_id}",
+            )
         return ConnectorResult(success=False, error="Unknown mode")
 
     async def _op_list_batches(self, limit: int = 20, **kwargs: Any) -> ConnectorResult:
@@ -121,7 +139,13 @@ class SparkConnector(RESTConnector):
                 apps = result.data.get("apps", {}).get("app", [])
                 columns = ["id", "name", "state", "finalStatus", "applicationType"]
                 rows = [
-                    [a.get("id"), a.get("name"), a.get("state"), a.get("finalStatus"), a.get("applicationType")]
+                    [
+                        a.get("id"),
+                        a.get("name"),
+                        a.get("state"),
+                        a.get("finalStatus"),
+                        a.get("applicationType"),
+                    ]
                     for a in apps
                 ]
                 return ConnectorResult(columns=columns, rows=rows, row_count=len(rows))
@@ -141,7 +165,9 @@ class SparkConnector(RESTConnector):
     ) -> ConnectorResult:
         """Create an interactive Spark session (Livy only)."""
         if self._mode != "livy":
-            return ConnectorResult(success=False, error="Interactive sessions only available in livy mode")
+            return ConnectorResult(
+                success=False, error="Interactive sessions only available in livy mode"
+            )
 
         body: dict[str, Any] = {"kind": kind}
         merged_conf = dict(self._default_conf)
@@ -180,14 +206,23 @@ class SparkConnector(RESTConnector):
             return submit_result
 
         import asyncio
+
         for _ in range(60):  # Max 60 polls (~2 min)
             await asyncio.sleep(2)
-            status_result = await self.request("GET", f"/sessions/{session_id}/statements/{stmt_id}")
+            status_result = await self.request(
+                "GET", f"/sessions/{session_id}/statements/{stmt_id}"
+            )
             if not status_result.success:
                 return status_result
-            state = status_result.data.get("state", "") if isinstance(status_result.data, dict) else ""
+            state = (
+                status_result.data.get("state", "") if isinstance(status_result.data, dict) else ""
+            )
             if state in ("available", "error", "cancelled"):
-                output = status_result.data.get("output", {}) if isinstance(status_result.data, dict) else {}
+                output = (
+                    status_result.data.get("output", {})
+                    if isinstance(status_result.data, dict)
+                    else {}
+                )
                 if output.get("status") == "error":
                     return ConnectorResult(
                         success=False,
@@ -208,8 +243,7 @@ class SparkConnector(RESTConnector):
             sessions = result.data.get("sessions", [])
             columns = ["id", "kind", "state", "appId"]
             rows = [
-                [s.get("id"), s.get("kind"), s.get("state"), s.get("appId", "")]
-                for s in sessions
+                [s.get("id"), s.get("kind"), s.get("state"), s.get("appId", "")] for s in sessions
             ]
             return ConnectorResult(columns=columns, rows=rows, row_count=len(rows))
         return result
@@ -272,7 +306,9 @@ class SparkConnector(RESTConnector):
                 "arguments": args or [],
                 "sparkConf": conf or {},
                 "driver": self._config.get("driver_spec", {"cores": 1, "memory": "1g"}),
-                "executor": self._config.get("executor_spec", {"cores": 1, "instances": 2, "memory": "1g"}),
+                "executor": self._config.get(
+                    "executor_spec", {"cores": 1, "instances": 2, "memory": "1g"}
+                ),
             },
         }
 

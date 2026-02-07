@@ -121,7 +121,9 @@ class RESTConnector(BaseConnector):
                 else:
                     body = resp.text
 
-                return ConnectorResult(success=True, data=body, metadata={"status": resp.status_code})
+                return ConnectorResult(
+                    success=True, data=body, metadata={"status": resp.status_code}
+                )
 
             except httpx.HTTPStatusError as e:
                 # Don't retry 4xx (except 429)
@@ -143,13 +145,17 @@ class RESTConnector(BaseConnector):
         if own_client:
             await client.aclose()
 
-        return ConnectorResult(success=False, error=f"Request failed after {self._max_retries} attempts: {last_error}")
+        return ConnectorResult(
+            success=False, error=f"Request failed after {self._max_retries} attempts: {last_error}"
+        )
 
     # ------------------------------------------------------------------
     # Convenience operations (dispatched by BaseConnector.execute)
     # ------------------------------------------------------------------
 
-    async def _op_request(self, method: str = "GET", path: str = "/", **kwargs: Any) -> ConnectorResult:
+    async def _op_request(
+        self, method: str = "GET", path: str = "/", **kwargs: Any
+    ) -> ConnectorResult:
         return await self.request(method, path, **kwargs)
 
     async def _op_get(self, path: str = "/", **kwargs: Any) -> ConnectorResult:
@@ -202,7 +208,9 @@ class RESTConnector(BaseConnector):
                 break
             offset += len(items)
 
-        return ConnectorResult(success=True, data=all_items, metadata={"total_fetched": len(all_items)})
+        return ConnectorResult(
+            success=True, data=all_items, metadata={"total_fetched": len(all_items)}
+        )
 
     # ------------------------------------------------------------------
     # Auth helpers

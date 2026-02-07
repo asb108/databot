@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from contextlib import asynccontextmanager, contextmanager
 from typing import Any, AsyncIterator, Iterator
 
@@ -67,6 +66,7 @@ class Tracer:
                     from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
                         OTLPSpanExporter,
                     )
+
                     exporter = OTLPSpanExporter(endpoint=self._endpoint)
                 except ImportError:
                     logger.warning("OTLP exporter not available, falling back to console")
@@ -92,8 +92,6 @@ class Tracer:
         if not self._enabled or not self._tracer:
             return _NoOpSpan()
 
-        from opentelemetry import trace
-
         span = self._tracer.start_span(name)
         if attributes:
             for k, v in attributes.items():
@@ -113,7 +111,9 @@ class Tracer:
             s.end()
 
     @asynccontextmanager
-    async def async_span(self, name: str, attributes: dict[str, Any] | None = None) -> AsyncIterator[Any]:
+    async def async_span(
+        self, name: str, attributes: dict[str, Any] | None = None
+    ) -> AsyncIterator[Any]:
         """Async context manager for spans."""
         s = self.start_span(name, attributes)
         try:

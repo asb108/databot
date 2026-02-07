@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from loguru import logger
-
 from databot.connectors.base import ConnectorResult, ConnectorStatus, ConnectorType
 from databot.connectors.rest_connector import RESTConnector
 
@@ -68,7 +66,11 @@ class KafkaConnector(RESTConnector):
                     topics = topics_result.data.get("data", [])
                     columns = ["topic_name", "partitions_count", "is_internal"]
                     rows = [
-                        [t.get("topic_name"), t.get("partitions_count", ""), t.get("is_internal", False)]
+                        [
+                            t.get("topic_name"),
+                            t.get("partitions_count", ""),
+                            t.get("is_internal", False),
+                        ]
                         for t in topics
                     ]
                     return ConnectorResult(columns=columns, rows=rows, row_count=len(rows))
@@ -100,16 +102,24 @@ class KafkaConnector(RESTConnector):
             clusters = result.data.get("data", [])
             if clusters:
                 cluster_id = clusters[0].get("cluster_id", "")
-                groups_result = await self.request("GET", f"/v3/clusters/{cluster_id}/consumer-groups")
+                groups_result = await self.request(
+                    "GET", f"/v3/clusters/{cluster_id}/consumer-groups"
+                )
                 if groups_result.success and isinstance(groups_result.data, dict):
                     groups = groups_result.data.get("data", [])
                     columns = ["consumer_group_id", "state", "coordinator"]
                     rows = [
-                        [g.get("consumer_group_id"), g.get("state", ""), g.get("coordinator", {}).get("host", "")]
+                        [
+                            g.get("consumer_group_id"),
+                            g.get("state", ""),
+                            g.get("coordinator", {}).get("host", ""),
+                        ]
                         for g in groups
                     ]
                     return ConnectorResult(columns=columns, rows=rows, row_count=len(rows))
-        return ConnectorResult(success=False, error="Consumer group listing requires Confluent REST Proxy v3")
+        return ConnectorResult(
+            success=False, error="Consumer group listing requires Confluent REST Proxy v3"
+        )
 
     async def _op_consumer_group_lag(self, group: str, **kwargs: Any) -> ConnectorResult:
         """Get consumer lag for a consumer group."""
@@ -124,16 +134,22 @@ class KafkaConnector(RESTConnector):
                 )
                 if lag_result.success and isinstance(lag_result.data, dict):
                     lags = lag_result.data.get("data", [])
-                    columns = ["topic_name", "partition_id", "current_offset", "log_end_offset", "lag"]
+                    columns = [
+                        "topic_name",
+                        "partition_id",
+                        "current_offset",
+                        "log_end_offset",
+                        "lag",
+                    ]
                     rows = [
                         [
-                            l.get("topic_name"),
-                            l.get("partition_id"),
-                            l.get("current_offset"),
-                            l.get("log_end_offset"),
-                            l.get("lag"),
+                            lag.get("topic_name"),
+                            lag.get("partition_id"),
+                            lag.get("current_offset"),
+                            lag.get("log_end_offset"),
+                            lag.get("lag"),
                         ]
-                        for l in lags
+                        for lag in lags
                     ]
                     return ConnectorResult(columns=columns, rows=rows, row_count=len(rows))
                 return lag_result
@@ -150,7 +166,10 @@ class KafkaConnector(RESTConnector):
 
         # Use a temporary client for the schema registry
         import httpx
-        async with httpx.AsyncClient(base_url=self._schema_registry_url, timeout=self._timeout) as client:
+
+        async with httpx.AsyncClient(
+            base_url=self._schema_registry_url, timeout=self._timeout
+        ) as client:
             resp = await client.get("/subjects")
             resp.raise_for_status()
             subjects = resp.json()
@@ -161,13 +180,18 @@ class KafkaConnector(RESTConnector):
                 row_count=len(subjects),
             )
 
-    async def _op_get_schema(self, subject: str, version: str = "latest", **kwargs: Any) -> ConnectorResult:
+    async def _op_get_schema(
+        self, subject: str, version: str = "latest", **kwargs: Any
+    ) -> ConnectorResult:
         """Get schema for a subject from Schema Registry."""
         if not self._schema_registry_url:
             return ConnectorResult(success=False, error="schema_registry_url not configured")
 
         import httpx
-        async with httpx.AsyncClient(base_url=self._schema_registry_url, timeout=self._timeout) as client:
+
+        async with httpx.AsyncClient(
+            base_url=self._schema_registry_url, timeout=self._timeout
+        ) as client:
             resp = await client.get(f"/subjects/{subject}/versions/{version}")
             resp.raise_for_status()
             return ConnectorResult(data=resp.json())
@@ -182,6 +206,7 @@ class KafkaConnector(RESTConnector):
             return ConnectorResult(success=False, error="connect_url not configured")
 
         import httpx
+
         async with httpx.AsyncClient(base_url=self._connect_url, timeout=self._timeout) as client:
             resp = await client.get("/connectors?expand=status")
             resp.raise_for_status()
@@ -193,12 +218,14 @@ class KafkaConnector(RESTConnector):
                 rows = []
                 for name, info in data.items():
                     status = info.get("status", {}).get("connector", {})
-                    rows.append([
-                        name,
-                        status.get("state", ""),
-                        status.get("worker_id", ""),
-                        info.get("type", ""),
-                    ])
+                    rows.append(
+                        [
+                            name,
+                            status.get("state", ""),
+                            status.get("worker_id", ""),
+                            info.get("type", ""),
+                        ]
+                    )
                 return ConnectorResult(columns=columns, rows=rows, row_count=len(rows))
             else:
                 # Simple list
@@ -215,6 +242,7 @@ class KafkaConnector(RESTConnector):
             return ConnectorResult(success=False, error="connect_url not configured")
 
         import httpx
+
         async with httpx.AsyncClient(base_url=self._connect_url, timeout=self._timeout) as client:
             resp = await client.get(f"/connectors/{connector_name}/status")
             resp.raise_for_status()

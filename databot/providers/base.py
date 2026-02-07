@@ -79,6 +79,7 @@ class LLMProvider(ABC):
         if response.has_tool_calls:
             for tc in response.tool_calls:
                 import json
+
                 yield StreamChunk(
                     is_tool_call=True,
                     tool_call_id=tc.id,

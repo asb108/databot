@@ -26,8 +26,7 @@ class SparkTool(BaseTool):
     @property
     def description(self) -> str:
         spark_connectors = [
-            c.name for c in self._registry.list_all()
-            if isinstance(c, SparkConnector)
+            c.name for c in self._registry.list_all() if isinstance(c, SparkConnector)
         ]
         names = ", ".join(spark_connectors) if spark_connectors else "none configured"
         return (
@@ -42,9 +41,15 @@ class SparkTool(BaseTool):
                 "action": {
                     "type": "string",
                     "enum": [
-                        "submit_batch", "batch_status", "batch_logs", "kill_batch",
-                        "list_batches", "create_session", "run_statement",
-                        "session_status", "list_sessions",
+                        "submit_batch",
+                        "batch_status",
+                        "batch_logs",
+                        "kill_batch",
+                        "list_batches",
+                        "create_session",
+                        "run_statement",
+                        "session_status",
+                        "list_sessions",
                     ],
                     "description": "Spark action to perform.",
                 },
@@ -115,6 +120,7 @@ class SparkTool(BaseTool):
             if isinstance(result.data, str):
                 return result.data
             import json
+
             return json.dumps(result.data, indent=2, default=str)
         return "OK"
 
@@ -129,13 +135,12 @@ class SparkTool(BaseTool):
             return conn
 
         # Auto-select if only one spark connector exists
-        spark_connectors = [
-            c for c in self._registry.list_all()
-            if isinstance(c, SparkConnector)
-        ]
+        spark_connectors = [c for c in self._registry.list_all() if isinstance(c, SparkConnector)]
         if len(spark_connectors) == 0:
             return "Error: No Spark connectors configured."
         if len(spark_connectors) == 1:
             return spark_connectors[0]
         names = ", ".join(c.name for c in spark_connectors)
-        return f"Error: Multiple Spark connectors configured ({names}). Specify 'connector' parameter."
+        return (
+            f"Error: Multiple Spark connectors configured ({names}). Specify 'connector' parameter."
+        )

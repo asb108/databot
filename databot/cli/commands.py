@@ -249,9 +249,7 @@ def _build_components(cfg):
     # ------------------------------------------------------------------
     connector_registry = ConnectorRegistry()
     if cfg.connectors.instances:
-        connector_cfgs = {
-            name: c.to_dict() for name, c in cfg.connectors.instances.items()
-        }
+        connector_cfgs = {name: c.to_dict() for name, c in cfg.connectors.instances.items()}
         connector_registry.load_from_config(connector_cfgs)
 
     # ------------------------------------------------------------------
@@ -308,8 +306,16 @@ def _build_components(cfg):
         )
 
     return (
-        bus, provider, tools, sessions, memory, workspace,
-        connector_registry, rag_context, tracer, delegator,
+        bus,
+        provider,
+        tools,
+        sessions,
+        memory,
+        workspace,
+        connector_registry,
+        rag_context,
+        tracer,
+        delegator,
     )
 
 
@@ -421,8 +427,16 @@ async def _process_single(cfg, message: str) -> str:
     from databot.core.loop import AgentLoop
 
     (
-        bus, provider, tools, sessions, memory, workspace,
-        connector_registry, rag_context, tracer, delegator,
+        bus,
+        provider,
+        tools,
+        sessions,
+        memory,
+        workspace,
+        connector_registry,
+        rag_context,
+        tracer,
+        delegator,
     ) = _build_components(cfg)
 
     # Connect connectors
@@ -468,8 +482,16 @@ async def _run_interactive(cfg):
     from databot.core.loop import AgentLoop
 
     (
-        bus, provider, tools, sessions, memory, workspace,
-        connector_registry, rag_context, tracer, delegator,
+        bus,
+        provider,
+        tools,
+        sessions,
+        memory,
+        workspace,
+        connector_registry,
+        rag_context,
+        tracer,
+        delegator,
     ) = _build_components(cfg)
 
     if connector_registry:
@@ -517,8 +539,16 @@ async def _run_gateway(cfg, port: int):
     from databot.tools.cron import CronTool
 
     (
-        bus, provider, tools, sessions, memory, workspace,
-        connector_registry, rag_context, tracer, delegator,
+        bus,
+        provider,
+        tools,
+        sessions,
+        memory,
+        workspace,
+        connector_registry,
+        rag_context,
+        tracer,
+        delegator,
     ) = _build_components(cfg)
 
     data_dir = _get_data_dir()
@@ -597,7 +627,8 @@ async def _run_gateway(cfg, port: int):
             if rag_context:
                 extra_context = rag_context.enrich_prompt(msg.content)
             result = await delegator.handle_with_metadata(
-                msg.content, extra_context=extra_context,
+                msg.content,
+                extra_context=extra_context,
             )
             return {
                 "response": result["response"],
@@ -631,11 +662,13 @@ async def _run_gateway(cfg, port: int):
             async for event in loop.process_message_stream(msg):
                 yield {
                     "event": event.event_type,
-                    "data": _json.dumps({
-                        "type": event.event_type,
-                        "data": event.data,
-                        "tool_name": event.tool_name,
-                    }),
+                    "data": _json.dumps(
+                        {
+                            "type": event.event_type,
+                            "data": event.data,
+                            "tool_name": event.tool_name,
+                        }
+                    ),
                 }
 
         return EventSourceResponse(_event_generator())
@@ -647,12 +680,14 @@ async def _run_gateway(cfg, port: int):
             return {"connectors": []}
         result = []
         for conn in connector_registry.list_all():
-            result.append({
-                "name": conn.name,
-                "type": conn.connector_type.value,
-                "connected": conn.is_connected,
-                "capabilities": conn.capabilities(),
-            })
+            result.append(
+                {
+                    "name": conn.name,
+                    "type": conn.connector_type.value,
+                    "connected": conn.is_connected,
+                    "capabilities": conn.capabilities(),
+                }
+            )
         return {"connectors": result}
 
     # Google Chat routes

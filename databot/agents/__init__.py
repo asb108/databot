@@ -23,10 +23,10 @@ from loguru import logger
 from databot.providers.base import LLMProvider
 from databot.tools.base import ToolRegistry
 
-
 # ---------------------------------------------------------------------------
 # Specialist Agent
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class AgentSpec:
@@ -108,21 +108,25 @@ class SpecialistAgent:
                     }
                     for tc in response.tool_calls
                 ]
-                messages.append({
-                    "role": "assistant",
-                    "content": response.content,
-                    "tool_calls": tc_dicts,
-                })
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": response.content,
+                        "tool_calls": tc_dicts,
+                    }
+                )
 
                 # Execute tools
                 for tc in response.tool_calls:
                     result = await self._all_tools.execute(tc.name, tc.arguments)
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "name": tc.name,
-                        "content": result,
-                    })
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "name": tc.name,
+                            "content": result,
+                        }
+                    )
             else:
                 return response.content or ""
 
@@ -168,8 +172,7 @@ class Router:
     async def route(self, user_message: str, history: list[dict[str, Any]] | None = None) -> str:
         """Determine which agent should handle the message. Returns agent name."""
         agent_desc = "\n".join(
-            f"- {name}: {agent.spec.description}"
-            for name, agent in self._agents.items()
+            f"- {name}: {agent.spec.description}" for name, agent in self._agents.items()
         )
         sys_prompt = _ROUTER_SYSTEM_PROMPT.replace("{agent_descriptions}", agent_desc)
 
@@ -209,6 +212,7 @@ class Router:
 # ---------------------------------------------------------------------------
 # Delegator (Multi-Agent Orchestrator)
 # ---------------------------------------------------------------------------
+
 
 class Delegator:
     """Orchestrates multi-agent workflows.
@@ -337,10 +341,7 @@ def build_default_agents(
     """
     specs = specs or DEFAULT_AGENT_SPECS
 
-    agents = {
-        name: SpecialistAgent(spec, provider, tools, model)
-        for name, spec in specs.items()
-    }
+    agents = {name: SpecialistAgent(spec, provider, tools, model) for name, spec in specs.items()}
 
     router = Router(agents, provider, model)
     delegator = Delegator(agents, router)

@@ -17,13 +17,11 @@ Architecture
 
 from __future__ import annotations
 
-import asyncio
 import json
 from pathlib import Path
 from typing import Any
 
 from loguru import logger
-
 
 # ---------------------------------------------------------------------------
 # MCP Server builder
@@ -73,9 +71,7 @@ def _build_mcp_server(cfg: Any | None = None):
         # --- Connectors ---
         _connector_registry = ConnectorRegistry()
         if config.connectors.instances:
-            connector_cfgs = {
-                name: c.to_dict() for name, c in config.connectors.instances.items()
-            }
+            connector_cfgs = {name: c.to_dict() for name, c in config.connectors.instances.items()}
             _connector_registry.load_from_config(connector_cfgs)
             await _connector_registry.connect_all()
 
@@ -88,8 +84,7 @@ def _build_mcp_server(cfg: Any | None = None):
             _tools[func["name"]] = func
 
         logger.info(
-            f"MCP server initialised: {len(_tools)} tools, "
-            f"{len(_connector_registry)} connectors"
+            f"MCP server initialised: {len(_tools)} tools, {len(_connector_registry)} connectors"
         )
 
     def _register_all_tools(
@@ -141,8 +136,7 @@ def _build_mcp_server(cfg: Any | None = None):
             from databot.tools.sql import SQLTool
 
             conn_configs = {
-                name: conn.model_dump()
-                for name, conn in config.tools.sql.connections.items()
+                name: conn.model_dump() for name, conn in config.tools.sql.connections.items()
             }
             sql_tool = SQLTool(
                 connections=conn_configs,
@@ -318,11 +312,10 @@ async def run_stdio(cfg: Any | None = None) -> None:
 
 async def run_sse(cfg: Any | None = None, host: str = "0.0.0.0", port: int = 18791) -> None:
     """Run the MCP server over SSE transport (HTTP)."""
+    import uvicorn
     from mcp.server.sse import SseServerTransport
     from starlette.applications import Starlette
     from starlette.routing import Mount, Route
-
-    import uvicorn
 
     server = _build_mcp_server(cfg)
     sse = SseServerTransport("/messages/")

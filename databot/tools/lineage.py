@@ -97,6 +97,7 @@ class LineageTool(BaseTool):
                 return await self._execute_marquez(action, table, **kwargs)
             except Exception as e:
                 from loguru import logger
+
                 logger.warning(f"Marquez query failed, falling back to local graph: {e}")
 
         # Fallback to local NetworkX graph
@@ -127,7 +128,7 @@ class LineageTool(BaseTool):
                 # Get dataset lineage
                 ns = namespace or "default"
                 resp = await client.get(
-                    f"/api/v1/lineage",
+                    "/api/v1/lineage",
                     params={"nodeId": f"dataset:{ns}:{table}", "depth": depth},
                 )
                 resp.raise_for_status()
@@ -135,7 +136,8 @@ class LineageTool(BaseTool):
 
                 # Filter for datasets only
                 datasets = [
-                    n for n in graph
+                    n
+                    for n in graph
                     if n.get("type") == "DATASET" and n.get("id", {}).get("name") != table
                 ]
                 if not datasets:
@@ -172,7 +174,7 @@ class LineageTool(BaseTool):
                 # List jobs related to a dataset
                 ns = namespace or "default"
                 resp = await client.get(
-                    f"/api/v1/lineage",
+                    "/api/v1/lineage",
                     params={"nodeId": f"dataset:{ns}:{table}", "depth": 1},
                 )
                 resp.raise_for_status()
@@ -190,7 +192,9 @@ class LineageTool(BaseTool):
             elif action == "runs":
                 # Get recent runs for a job (treat table as job name)
                 ns = namespace or "default"
-                resp = await client.get(f"/api/v1/namespaces/{ns}/jobs/{table}/runs", params={"limit": 10})
+                resp = await client.get(
+                    f"/api/v1/namespaces/{ns}/jobs/{table}/runs", params={"limit": 10}
+                )
                 resp.raise_for_status()
                 runs = resp.json().get("runs", [])
                 if not runs:
@@ -211,7 +215,7 @@ class LineageTool(BaseTool):
                 # Use lineage graph to find path
                 ns = namespace or "default"
                 resp = await client.get(
-                    f"/api/v1/lineage",
+                    "/api/v1/lineage",
                     params={"nodeId": f"dataset:{ns}:{table}", "depth": 10},
                 )
                 resp.raise_for_status()

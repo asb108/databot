@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Callable
+from typing import Any, Callable
 
 from loguru import logger
 

@@ -21,9 +21,23 @@ from databot.connectors.base import (
 
 # Forbidden SQL keywords for write operations
 _FORBIDDEN_KEYWORDS = {
-    "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE",
-    "TRUNCATE", "GRANT", "REVOKE", "MERGE", "REPLACE",
-    "RENAME", "CALL", "EXEC", "EXECUTE", "LOAD", "COPY",
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "DROP",
+    "ALTER",
+    "CREATE",
+    "TRUNCATE",
+    "GRANT",
+    "REVOKE",
+    "MERGE",
+    "REPLACE",
+    "RENAME",
+    "CALL",
+    "EXEC",
+    "EXECUTE",
+    "LOAD",
+    "COPY",
 }
 _MULTI_STATEMENT_RE = re.compile(
     r""";\ *(?=(?:[^'"]*['"][^'"]*['"])*[^'"]*$)""",
@@ -124,7 +138,9 @@ class SQLConnector(BaseConnector):
                 self._max_rows,
             )
 
-    async def _op_list_tables(self, database: str = "", schema: str = "", **kwargs: Any) -> ConnectorResult:
+    async def _op_list_tables(
+        self, database: str = "", schema: str = "", **kwargs: Any
+    ) -> ConnectorResult:
         """List tables in a database/schema."""
         driver = self._driver
         if driver in ("mysql", "starrocks", "clickhouse"):

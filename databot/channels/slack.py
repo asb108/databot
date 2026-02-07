@@ -80,7 +80,6 @@ class SlackChannel(BaseChannel):
 
             user = event.get("user", "unknown")
             channel_id = event.get("channel", "unknown")
-            thread_ts = event.get("thread_ts") or event.get("ts")
 
             inbound = InboundMessage(
                 channel="slack",

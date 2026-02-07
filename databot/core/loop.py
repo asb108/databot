@@ -12,7 +12,7 @@ from loguru import logger
 from databot.core.bus import InboundMessage, MessageBus, OutboundMessage, StreamEvent
 from databot.core.context import ContextBuilder
 from databot.memory.manager import MemoryManager
-from databot.providers.base import LLMProvider, StreamChunk
+from databot.providers.base import LLMProvider
 from databot.session.manager import SessionManager
 from databot.tools.base import ToolRegistry
 
@@ -196,9 +196,7 @@ class AgentLoop:
         response = await self.process_message(msg)
         return response.content if response else ""
 
-    async def process_message_stream(
-        self, msg: InboundMessage
-    ) -> AsyncIterator[StreamEvent]:
+    async def process_message_stream(self, msg: InboundMessage) -> AsyncIterator[StreamEvent]:
         """Process a message with streaming — yields StreamEvent for SSE delivery."""
         logger.info(f"Processing streaming message from {msg.channel}:{msg.sender_id}")
 
@@ -232,12 +230,14 @@ class AgentLoop:
                         parsed_args = json.loads(args)
                     except json.JSONDecodeError:
                         parsed_args = {"raw": args}
-                    tool_calls_collected.append({
-                        "id": chunk.tool_call_id,
-                        "name": chunk.tool_name,
-                        "arguments": args,
-                        "parsed": parsed_args,
-                    })
+                    tool_calls_collected.append(
+                        {
+                            "id": chunk.tool_call_id,
+                            "name": chunk.tool_name,
+                            "arguments": args,
+                            "parsed": parsed_args,
+                        }
+                    )
                 elif chunk.delta:
                     text_buffer += chunk.delta
                     full_content += chunk.delta
@@ -293,9 +293,7 @@ class AgentLoop:
                             continue
 
                     result = await self.tools.execute(tc["name"], tc["parsed"])
-                    messages = self.context.add_tool_result(
-                        messages, tc["id"], tc["name"], result
-                    )
+                    messages = self.context.add_tool_result(messages, tc["id"], tc["name"], result)
                     yield StreamEvent(
                         channel=msg.channel,
                         chat_id=msg.chat_id,

@@ -9,9 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from loguru import logger
-
-from databot.connectors.base import ConnectorResult, ConnectorStatus, ConnectorType
+from databot.connectors.base import ConnectorResult, ConnectorType
 from databot.connectors.rest_connector import RESTConnector
 
 
@@ -67,7 +65,9 @@ class CatalogConnector(RESTConnector):
             return await self._unity_list_tables(namespace)
         return ConnectorResult(success=False, error=f"Unsupported catalog driver: {driver}")
 
-    async def _op_get_table_schema(self, namespace: str, table: str, **kwargs: Any) -> ConnectorResult:
+    async def _op_get_table_schema(
+        self, namespace: str, table: str, **kwargs: Any
+    ) -> ConnectorResult:
         """Get column definitions for a table."""
         driver = self._catalog_driver
         if driver == "iceberg_rest":
@@ -78,7 +78,9 @@ class CatalogConnector(RESTConnector):
             return await self._unity_table_schema(namespace, table)
         return ConnectorResult(success=False, error=f"Unsupported catalog driver: {driver}")
 
-    async def _op_get_table_metadata(self, namespace: str, table: str, **kwargs: Any) -> ConnectorResult:
+    async def _op_get_table_metadata(
+        self, namespace: str, table: str, **kwargs: Any
+    ) -> ConnectorResult:
         """Get full metadata for a table (format, location, properties, etc.)."""
         driver = self._catalog_driver
         if driver == "iceberg_rest":
@@ -126,7 +128,11 @@ class CatalogConnector(RESTConnector):
     async def _iceberg_list_tables(self, namespace: str) -> ConnectorResult:
         prefix = self._config.get("prefix", "")
         ns_path = namespace.replace(".", "\x1f")  # Iceberg uses \x1f separator
-        path = f"/v1/{prefix}/namespaces/{ns_path}/tables" if prefix else f"/v1/namespaces/{ns_path}/tables"
+        path = (
+            f"/v1/{prefix}/namespaces/{ns_path}/tables"
+            if prefix
+            else f"/v1/namespaces/{ns_path}/tables"
+        )
         result = await self.request("GET", path)
         if not result.success:
             return result
@@ -144,7 +150,9 @@ class CatalogConnector(RESTConnector):
         if not metadata.success:
             return metadata
         tbl = metadata.data
-        schema = tbl.get("metadata", {}).get("current-schema", tbl.get("metadata", {}).get("schema", {}))
+        schema = tbl.get("metadata", {}).get(
+            "current-schema", tbl.get("metadata", {}).get("schema", {})
+        )
         fields = schema.get("fields", [])
         columns = ["name", "type", "required", "doc"]
         rows = [
@@ -221,7 +229,6 @@ class CatalogConnector(RESTConnector):
             return meta
         cols = meta.data.get("Table", {}).get("StorageDescriptor", {}).get("Columns", [])
         partition_keys = meta.data.get("Table", {}).get("PartitionKeys", [])
-        all_cols = cols + partition_keys
         columns = ["name", "type", "comment", "is_partition"]
         rows = []
         for c in cols:
@@ -259,8 +266,7 @@ class CatalogConnector(RESTConnector):
             tables = resp.get("TableList", [])
             columns_out = ["database", "table_name", "description"]
             rows_out = [
-                [t.get("DatabaseName"), t.get("Name"), t.get("Description", "")]
-                for t in tables
+                [t.get("DatabaseName"), t.get("Name"), t.get("Description", "")] for t in tables
             ]
             return ConnectorResult(columns=columns_out, rows=rows_out, row_count=len(rows_out))
 
@@ -272,7 +278,9 @@ class CatalogConnector(RESTConnector):
 
     async def _unity_list_schemas(self) -> ConnectorResult:
         catalog_name = self._config.get("catalog", "")
-        result = await self.request("GET", f"/api/2.1/unity-catalog/schemas", params={"catalog_name": catalog_name})
+        result = await self.request(
+            "GET", "/api/2.1/unity-catalog/schemas", params={"catalog_name": catalog_name}
+        )
         if not result.success:
             return result
         schemas = result.data.get("schemas", []) if isinstance(result.data, dict) else []

@@ -7,7 +7,7 @@ import hmac
 import secrets
 from typing import Callable
 
-from fastapi import HTTPException, Request, Response
+from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -27,9 +27,7 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._api_keys = api_keys or []
         # Pre-hash keys for constant-time comparison
-        self._key_hashes = [
-            hashlib.sha256(k.encode()).hexdigest() for k in self._api_keys
-        ]
+        self._key_hashes = [hashlib.sha256(k.encode()).hexdigest() for k in self._api_keys]
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         # Skip auth for public paths and OPTIONS requests
@@ -71,10 +69,7 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
     def _verify_key(self, token: str) -> bool:
         """Verify an API key using constant-time comparison."""
         token_hash = hashlib.sha256(token.encode()).hexdigest()
-        return any(
-            hmac.compare_digest(token_hash, key_hash)
-            for key_hash in self._key_hashes
-        )
+        return any(hmac.compare_digest(token_hash, key_hash) for key_hash in self._key_hashes)
 
     @staticmethod
     def generate_key() -> str:

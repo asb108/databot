@@ -12,9 +12,23 @@ from databot.tools.base import BaseTool
 
 # Forbidden SQL keywords for write operations
 _FORBIDDEN_KEYWORDS = {
-    "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE",
-    "TRUNCATE", "GRANT", "REVOKE", "MERGE", "REPLACE",
-    "RENAME", "CALL", "EXEC", "EXECUTE", "LOAD", "COPY",
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "DROP",
+    "ALTER",
+    "CREATE",
+    "TRUNCATE",
+    "GRANT",
+    "REVOKE",
+    "MERGE",
+    "REPLACE",
+    "RENAME",
+    "CALL",
+    "EXEC",
+    "EXECUTE",
+    "LOAD",
+    "COPY",
 }
 # Pattern to detect multiple SQL statements (semicolons not inside quotes)
 _MULTI_STATEMENT_RE = re.compile(
@@ -97,9 +111,7 @@ class SQLTool(BaseTool):
                             return result.to_markdown_table(max_rows=self._max_rows)
                         return f"Error: {result.error}"
                 except Exception as e:
-                    logger.warning(
-                        f"Connector '{connection}' failed, falling back to legacy: {e}"
-                    )
+                    logger.warning(f"Connector '{connection}' failed, falling back to legacy: {e}")
 
         # --- Legacy direct-driver path ---
         conn_config = self._connections[connection]
@@ -133,14 +145,13 @@ class SQLTool(BaseTool):
         # Check all keywords in the query, not just the first word
         upper = normalized.upper()
         # Strip comments before analysis
-        upper = re.sub(r'--[^\n]*', '', upper)  # single-line comments
-        upper = re.sub(r'/\*.*?\*/', '', upper, flags=re.DOTALL)  # block comments
+        upper = re.sub(r"--[^\n]*", "", upper)  # single-line comments
+        upper = re.sub(r"/\*.*?\*/", "", upper, flags=re.DOTALL)  # block comments
 
         first_word = upper.split()[0] if upper.split() else ""
         if first_word in _FORBIDDEN_KEYWORDS:
             return (
-                f"Error: Write operations are not allowed (read_only=true). "
-                f"Blocked: {first_word}"
+                f"Error: Write operations are not allowed (read_only=true). Blocked: {first_word}"
             )
 
         # Also scan for forbidden keywords after WITH (CTE wrapping writes)
@@ -149,7 +160,7 @@ class SQLTool(BaseTool):
             # Find content after the last closing paren of CTE
             # Look for forbidden words that appear as statements
             for keyword in _FORBIDDEN_KEYWORDS:
-                pattern = rf'\)\s*{keyword}\b'
+                pattern = rf"\)\s*{keyword}\b"
                 if re.search(pattern, upper):
                     return (
                         f"Error: Write operations are not allowed (read_only=true). "

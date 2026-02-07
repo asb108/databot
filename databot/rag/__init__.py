@@ -42,9 +42,7 @@ class VectorStore:
         try:
             import chromadb
         except ImportError:
-            raise ImportError(
-                "chromadb not installed. Install with: pip install databot[rag]"
-            )
+            raise ImportError("chromadb not installed. Install with: pip install databot[rag]")
 
         if self._persist_dir:
             self._client = chromadb.PersistentClient(path=self._persist_dir)
@@ -73,6 +71,7 @@ class VectorStore:
         class LiteLLMEmbeddingFunction:
             def __call__(self, input: list[str]) -> list[list[float]]:
                 import litellm
+
                 response = litellm.embedding(
                     model=model,
                     input=input,
@@ -134,11 +133,13 @@ class VectorStore:
         distances = results.get("distances", [[]])[0]
 
         for doc, meta, dist in zip(docs, metas, distances):
-            items.append({
-                "document": doc,
-                "metadata": meta,
-                "distance": dist,
-            })
+            items.append(
+                {
+                    "document": doc,
+                    "metadata": meta,
+                    "distance": dist,
+                }
+            )
 
         return items
 
@@ -162,7 +163,9 @@ class VectorStore:
 class RAGContext:
     """Augments LLM prompts with relevant context from the vector store."""
 
-    def __init__(self, store: VectorStore, max_context_docs: int = 5, max_context_chars: int = 4000):
+    def __init__(
+        self, store: VectorStore, max_context_docs: int = 5, max_context_chars: int = 4000
+    ):
         self._store = store
         self._max_docs = max_context_docs
         self._max_chars = max_context_chars
@@ -198,16 +201,14 @@ class RAGContext:
 
         return (
             "Relevant context from knowledge base:\n"
-            "---\n"
-            + "\n---\n".join(context_parts)
-            + "\n---\n"
+            "---\n" + "\n---\n".join(context_parts) + "\n---\n"
         )
 
-    def ingest_schema(self, table_name: str, columns: list[dict[str, str]], database: str = "") -> None:
+    def ingest_schema(
+        self, table_name: str, columns: list[dict[str, str]], database: str = ""
+    ) -> None:
         """Ingest a table schema into the vector store for schema-aware queries."""
-        cols_text = ", ".join(
-            f"{c.get('name', '?')} ({c.get('type', '?')})" for c in columns
-        )
+        cols_text = ", ".join(f"{c.get('name', '?')} ({c.get('type', '?')})" for c in columns)
         doc = f"Table: {table_name}\nDatabase: {database}\nColumns: {cols_text}"
         meta = {
             "source": "schema",

@@ -26,8 +26,7 @@ class CatalogTool(BaseTool):
     @property
     def description(self) -> str:
         cat_connectors = [
-            c.name for c in self._registry.list_all()
-            if isinstance(c, CatalogConnector)
+            c.name for c in self._registry.list_all() if isinstance(c, CatalogConnector)
         ]
         names = ", ".join(cat_connectors) if cat_connectors else "none configured"
         return (
@@ -43,8 +42,11 @@ class CatalogTool(BaseTool):
                 "action": {
                     "type": "string",
                     "enum": [
-                        "list_databases", "list_tables", "get_schema",
-                        "search", "load_table",
+                        "list_databases",
+                        "list_tables",
+                        "get_schema",
+                        "search",
+                        "load_table",
                     ],
                     "description": "Catalog action to perform.",
                 },
@@ -90,6 +92,7 @@ class CatalogTool(BaseTool):
             if isinstance(result.data, str):
                 return result.data
             import json
+
             return json.dumps(result.data, indent=2, default=str)
         return "OK"
 
@@ -103,10 +106,7 @@ class CatalogTool(BaseTool):
                 return f"Error: Connector '{name}' is not a Catalog connector."
             return conn
 
-        cat_connectors = [
-            c for c in self._registry.list_all()
-            if isinstance(c, CatalogConnector)
-        ]
+        cat_connectors = [c for c in self._registry.list_all() if isinstance(c, CatalogConnector)]
         if len(cat_connectors) == 0:
             return "Error: No catalog connectors configured."
         if len(cat_connectors) == 1:

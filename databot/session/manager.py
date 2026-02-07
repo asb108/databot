@@ -25,7 +25,7 @@ class Session:
         self._history.append({"role": role, "content": content})
         # Keep history bounded to avoid context overflow
         if len(self._history) > self._max_messages:
-            self._history = self._history[-self._max_messages:]
+            self._history = self._history[-self._max_messages :]
 
     def get_history(self) -> list[dict[str, Any]]:
         return list(self._history)
