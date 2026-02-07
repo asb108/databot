@@ -211,12 +211,34 @@ async function sendMessage(e) {
       body: JSON.stringify({ message: msg, sender: 'ui' }),
     });
 
-    if (!resp.ok || !resp.headers.get('content-type')?.includes('text/event-stream')) {
-      // Fallback to non-streaming
+    const contentType = resp.headers.get('content-type') || '';
+
+    if (!resp.ok || !contentType.includes('text/event-stream')) {
+      // Fallback: try /message endpoint or show error from /stream
       removeTypingIndicator();
-      const data = await resp.json();
-      addChatBubble('assistant', data.response || data.error || 'No response');
-      chatHistory.push({ role: 'assistant', content: data.response || '' });
+      try {
+        const data = await resp.json();
+        if (data.error) {
+          addChatBubble('assistant', '⚠️ ' + data.error);
+        } else {
+          addChatBubble('assistant', data.response || 'No response');
+          chatHistory.push({ role: 'assistant', content: data.response || '' });
+        }
+      } catch (_) {
+        // /stream returned non-JSON — fall back to /message
+        const resp2 = await fetch(BASE + '/api/v1/message', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg, sender: 'ui' }),
+        });
+        const data2 = await resp2.json();
+        if (data2.error) {
+          addChatBubble('assistant', '⚠️ ' + data2.error);
+        } else {
+          addChatBubble('assistant', data2.response || 'No response');
+          chatHistory.push({ role: 'assistant', content: data2.response || '' });
+        }
+      }
       return;
     }
 
@@ -248,6 +270,12 @@ async function sendMessage(e) {
               if (bubble) bubble.innerHTML = formatMsg(fullText);
             } else if (payload.type === 'tool_result') {
               fullText += '\n✅ *Result received*\n';
+              if (bubble) bubble.innerHTML = formatMsg(fullText);
+            } else if (payload.type === 'error') {
+              removeTypingIndicator();
+              if (!bubble) addChatBubble('assistant', '⚠️ ' + payload.data);
+              else { fullText += '\n⚠️ ' + payload.data; bubble.innerHTML = formatMsg(fullText); }
+            }
               if (bubble) bubble.innerHTML = formatMsg(fullText);
             }
           } catch (_) {}

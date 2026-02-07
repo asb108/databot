@@ -789,41 +789,66 @@ async def _run_gateway(cfg, port: int):
 
     @api.post("/api/v1/message")
     async def post_message(request: dict):
+        from fastapi.responses import JSONResponse
+
         from databot.core.bus import InboundMessage
+
+        content = request.get("message", "").strip()
+        if not content:
+            return JSONResponse({"error": "Empty message"}, status_code=400)
 
         msg = InboundMessage(
             channel="api",
             sender_id=request.get("sender", "api"),
             chat_id=request.get("chat_id", "api"),
-            content=request.get("message", ""),
+            content=content,
         )
 
-        # Multi-agent routing if enabled
-        if delegator:
-            extra_context = ""
-            if rag_context:
-                extra_context = rag_context.enrich_prompt(msg.content)
-            result = await delegator.handle_with_metadata(
-                msg.content,
-                extra_context=extra_context,
-            )
-            return {
-                "response": result["response"],
-                "agent": result.get("agent"),
-            }
+        try:
+            # Multi-agent routing if enabled
+            if delegator:
+                extra_context = ""
+                if rag_context:
+                    extra_context = rag_context.enrich_prompt(msg.content)
+                result = await delegator.handle_with_metadata(
+                    msg.content,
+                    extra_context=extra_context,
+                )
+                return {
+                    "response": result["response"],
+                    "agent": result.get("agent"),
+                }
 
-        response = await loop.process_message(msg)
-        return {"response": response.content if response else ""}
+            response = await loop.process_message(msg)
+            return {"response": response.content if response else ""}
+        except Exception as e:
+            logger.error(f"Message processing error: {e}")
+            err_msg = str(e)
+            if "API Key" in err_msg or "AuthenticationError" in err_msg:
+                err_msg = (
+                    "LLM API key not configured. Set ANTHROPIC_API_KEY "
+                    "environment variable or run 'databot init'."
+                )
+            return JSONResponse({"error": err_msg}, status_code=500)
 
     @api.post("/api/v1/stream")
     async def post_message_stream(request: dict):
         """SSE streaming endpoint."""
+        from fastapi.responses import JSONResponse
+
         from databot.core.bus import InboundMessage
+
+        content = request.get("message", "").strip()
+        if not content:
+            return JSONResponse({"error": "Empty message"}, status_code=400)
 
         try:
             from sse_starlette.sse import EventSourceResponse
         except ImportError:
-            return {"error": "sse-starlette not installed. pip install databot[streaming]"}
+            return JSONResponse(
+                {"error": "sse-starlette not installed. pip install databot[streaming]"},
+                status_code=500,
+            )
 
         import json as _json
 
@@ -831,21 +856,33 @@ async def _run_gateway(cfg, port: int):
             channel="api",
             sender_id=request.get("sender", "api"),
             chat_id=request.get("chat_id", "api"),
-            content=request.get("message", ""),
+            content=content,
             stream=True,
         )
 
         async def _event_generator():
-            async for event in loop.process_message_stream(msg):
+            try:
+                async for event in loop.process_message_stream(msg):
+                    yield {
+                        "event": event.event_type,
+                        "data": _json.dumps(
+                            {
+                                "type": event.event_type,
+                                "data": event.data,
+                                "tool_name": event.tool_name,
+                            }
+                        ),
+                    }
+            except Exception as e:
+                err_msg = str(e)
+                if "API Key" in err_msg or "AuthenticationError" in err_msg:
+                    err_msg = (
+                        "LLM API key not configured. Set ANTHROPIC_API_KEY "
+                        "environment variable or run 'databot init'."
+                    )
                 yield {
-                    "event": event.event_type,
-                    "data": _json.dumps(
-                        {
-                            "type": event.event_type,
-                            "data": event.data,
-                            "tool_name": event.tool_name,
-                        }
-                    ),
+                    "event": "error",
+                    "data": _json.dumps({"type": "error", "data": err_msg}),
                 }
 
         return EventSourceResponse(_event_generator())
@@ -890,7 +927,10 @@ async def _run_gateway(cfg, port: int):
     @api.delete("/api/v1/sessions/{key:path}")
     async def delete_session_endpoint(key: str):
         """Delete a session."""
-        await sessions.delete(key)
+        try:
+            sessions.delete(key)
+        except Exception:
+            pass  # Silently ignore if session doesn't exist
         return {"deleted": key}
 
     @api.get("/api/v1/tools")
