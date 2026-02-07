@@ -107,6 +107,18 @@ multi_agent:
 cron:
   jobs: []
 
+# Skills — bundles of tools to enable/disable
+skills:
+  enabled:
+    - filesystem
+    - shell
+    - web_search
+
+# Embedded UI
+ui:
+  enabled: true
+  theme: dark  # dark | light
+
 security:
   restrict_to_workspace: true
   allowed_commands: []

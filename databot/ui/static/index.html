@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>databot</title>
+<script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      colors: {
+        brand: { 50:'#eff6ff', 100:'#dbeafe', 200:'#bfdbfe', 400:'#60a5fa', 500:'#3b82f6', 600:'#2563eb', 700:'#1d4ed8' },
+        surface: { DEFAULT:'#0f172a', card:'#1e293b', hover:'#334155', border:'#475569' },
+      }
+    }
+  }
+}
+</script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+  @keyframes pulse-dot { 0%,80%,100% { opacity:.3; } 40% { opacity:1; } }
+  .typing-dot { animation: pulse-dot 1.4s infinite ease-in-out both; }
+  .typing-dot:nth-child(2) { animation-delay: .2s; }
+  .typing-dot:nth-child(3) { animation-delay: .4s; }
+  .fade-in { animation: fadeIn .2s ease-in; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+  pre code { white-space: pre-wrap; word-break: break-word; }
+</style>
+</head>
+<body class="bg-surface text-gray-200 h-screen flex overflow-hidden">
+
+<!-- Sidebar -->
+<aside id="sidebar" class="w-56 bg-surface-card border-r border-surface-border flex flex-col shrink-0">
+  <div class="p-4 border-b border-surface-border">
+    <h1 class="text-lg font-bold text-brand-400">&#x1F916; databot</h1>
+    <p class="text-xs text-gray-500 mt-0.5">AI Data Assistant</p>
+  </div>
+  <nav class="flex-1 py-2 overflow-y-auto scrollbar-thin">
+    <button onclick="switchTab('chat')"     id="tab-chat"       class="tab-btn w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2"><span>&#x1F4AC;</span> Chat</button>
+    <button onclick="switchTab('sessions')" id="tab-sessions"   class="tab-btn w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2"><span>&#x1F4CB;</span> Sessions</button>
+    <button onclick="switchTab('skills')"   id="tab-skills"     class="tab-btn w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2"><span>&#x1F9E9;</span> Skills</button>
+    <button onclick="switchTab('tools')"    id="tab-tools"      class="tab-btn w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2"><span>&#x1F527;</span> Tools</button>
+    <button onclick="switchTab('connectors')" id="tab-connectors" class="tab-btn w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2"><span>&#x1F50C;</span> Connectors</button>
+    <button onclick="switchTab('status')"   id="tab-status"     class="tab-btn w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2"><span>&#x1F4CA;</span> Status</button>
+  </nav>
+  <div class="p-3 border-t border-surface-border text-xs text-gray-500">
+    v0.2.0
+  </div>
+</aside>
+
+<!-- Main Content -->
+<main class="flex-1 flex flex-col min-w-0">
+
+  <!-- ====== CHAT ====== -->
+  <div id="page-chat" class="page flex flex-col flex-1">
+    <header class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+      <h2 class="font-semibold">Chat</h2>
+      <button onclick="clearChat()" class="text-xs px-2 py-1 rounded bg-surface-hover hover:bg-surface-border text-gray-400">Clear</button>
+    </header>
+    <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin"></div>
+    <div class="p-3 border-t border-surface-border">
+      <form id="chat-form" class="flex gap-2" onsubmit="sendMessage(event)">
+        <input id="chat-input" type="text" placeholder="Ask databot anything…"
+          class="flex-1 bg-surface-card border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500 placeholder-gray-500" autocomplete="off" />
+        <button type="submit" id="send-btn" class="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Send</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ====== SESSIONS ====== -->
+  <div id="page-sessions" class="page flex-col flex-1 hidden">
+    <header class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+      <h2 class="font-semibold">Sessions</h2>
+      <button onclick="loadSessions()" class="text-xs px-2 py-1 rounded bg-surface-hover hover:bg-surface-border text-gray-400">Refresh</button>
+    </header>
+    <div id="sessions-list" class="flex-1 overflow-y-auto p-4 scrollbar-thin"></div>
+  </div>
+
+  <!-- ====== SKILLS ====== -->
+  <div id="page-skills" class="page flex-col flex-1 hidden">
+    <header class="px-4 py-3 border-b border-surface-border">
+      <h2 class="font-semibold">Skills</h2>
+      <p class="text-xs text-gray-500 mt-0.5">Enable or disable tool bundles</p>
+    </header>
+    <div id="skills-list" class="flex-1 overflow-y-auto p-4 scrollbar-thin"></div>
+  </div>
+
+  <!-- ====== TOOLS ====== -->
+  <div id="page-tools" class="page flex-col flex-1 hidden">
+    <header class="px-4 py-3 border-b border-surface-border">
+      <h2 class="font-semibold">Registered Tools</h2>
+    </header>
+    <div id="tools-list" class="flex-1 overflow-y-auto p-4 scrollbar-thin"></div>
+  </div>
+
+  <!-- ====== CONNECTORS ====== -->
+  <div id="page-connectors" class="page flex-col flex-1 hidden">
+    <header class="px-4 py-3 border-b border-surface-border">
+      <h2 class="font-semibold">Connectors</h2>
+    </header>
+    <div id="connectors-list" class="flex-1 overflow-y-auto p-4 scrollbar-thin"></div>
+  </div>
+
+  <!-- ====== STATUS ====== -->
+  <div id="page-status" class="page flex-col flex-1 hidden">
+    <header class="px-4 py-3 border-b border-surface-border">
+      <h2 class="font-semibold">System Status</h2>
+    </header>
+    <div id="status-content" class="flex-1 overflow-y-auto p-4 scrollbar-thin"></div>
+  </div>
+
+</main>
+
+<script>
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+const BASE = location.origin;
+let chatHistory = [];
+let currentTab = 'chat';
+let streaming = false;
+
+// ---------------------------------------------------------------------------
+// Tab switching
+// ---------------------------------------------------------------------------
+function switchTab(name) {
+  currentTab = name;
+  document.querySelectorAll('.page').forEach(p => { p.classList.add('hidden'); p.classList.remove('flex'); });
+  const page = document.getElementById('page-' + name);
+  if (page) { page.classList.remove('hidden'); page.classList.add('flex'); }
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('bg-surface-hover','text-brand-400'));
+  const btn = document.getElementById('tab-' + name);
+  if (btn) { btn.classList.add('bg-surface-hover','text-brand-400'); }
+  // Auto-load data
+  if (name === 'sessions') loadSessions();
+  if (name === 'skills') loadSkills();
+  if (name === 'tools') loadTools();
+  if (name === 'connectors') loadConnectors();
+  if (name === 'status') loadStatus();
+}
+
+// ---------------------------------------------------------------------------
+// Chat
+// ---------------------------------------------------------------------------
+function addChatBubble(role, content, isStreaming) {
+  const div = document.createElement('div');
+  div.className = 'fade-in flex ' + (role === 'user' ? 'justify-end' : 'justify-start');
+  const bubble = document.createElement('div');
+  bubble.className = 'max-w-[75%] rounded-lg px-3 py-2 text-sm ' +
+    (role === 'user'
+      ? 'bg-brand-600 text-white'
+      : 'bg-surface-card border border-surface-border text-gray-200');
+  if (isStreaming) bubble.id = 'stream-bubble';
+  bubble.innerHTML = formatMsg(content);
+  div.appendChild(bubble);
+  document.getElementById('chat-messages').appendChild(div);
+  document.getElementById('chat-messages').scrollTop = 999999;
+  return bubble;
+}
+
+function addTypingIndicator() {
+  const div = document.createElement('div');
+  div.id = 'typing-indicator';
+  div.className = 'flex justify-start fade-in';
+  div.innerHTML = '<div class="bg-surface-card border border-surface-border rounded-lg px-4 py-2 flex gap-1">' +
+    '<span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full inline-block"></span>' +
+    '<span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full inline-block"></span>' +
+    '<span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full inline-block"></span></div>';
+  document.getElementById('chat-messages').appendChild(div);
+  document.getElementById('chat-messages').scrollTop = 999999;
+}
+
+function removeTypingIndicator() {
+  const el = document.getElementById('typing-indicator');
+  if (el) el.remove();
+}
+
+function formatMsg(text) {
+  if (!text) return '';
+  // Very basic markdown: code blocks, bold, inline code
+  text = text.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-black/40 rounded p-2 mt-1 mb-1 text-xs overflow-x-auto"><code>$2</code></pre>');
+  text = text.replace(/`([^`]+)`/g, '<code class="bg-black/30 px-1 rounded text-xs">$1</code>');
+  text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  text = text.replace(/\n/g, '<br>');
+  return text;
+}
+
+async function sendMessage(e) {
+  e.preventDefault();
+  const input = document.getElementById('chat-input');
+  const msg = input.value.trim();
+  if (!msg || streaming) return;
+  input.value = '';
+  addChatBubble('user', msg);
+  chatHistory.push({ role: 'user', content: msg });
+
+  streaming = true;
+  document.getElementById('send-btn').disabled = true;
+  addTypingIndicator();
+
+  try {
+    // Try streaming first
+    const resp = await fetch(BASE + '/api/v1/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg, sender: 'ui' }),
+    });
+
+    if (!resp.ok || !resp.headers.get('content-type')?.includes('text/event-stream')) {
+      // Fallback to non-streaming
+      removeTypingIndicator();
+      const data = await resp.json();
+      addChatBubble('assistant', data.response || data.error || 'No response');
+      chatHistory.push({ role: 'assistant', content: data.response || '' });
+      return;
+    }
+
+    removeTypingIndicator();
+    let fullText = '';
+    let bubble = null;
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data:')) {
+          try {
+            const payload = JSON.parse(line.slice(5).trim());
+            if (payload.type === 'token') {
+              fullText += payload.data;
+              if (!bubble) bubble = addChatBubble('assistant', fullText, true);
+              else bubble.innerHTML = formatMsg(fullText);
+              document.getElementById('chat-messages').scrollTop = 999999;
+            } else if (payload.type === 'tool_start') {
+              fullText += '\n🔧 *Using ' + (payload.tool_name || 'tool') + '…*\n';
+              if (bubble) bubble.innerHTML = formatMsg(fullText);
+            } else if (payload.type === 'tool_result') {
+              fullText += '\n✅ *Result received*\n';
+              if (bubble) bubble.innerHTML = formatMsg(fullText);
+            }
+          } catch (_) {}
+        }
+      }
+    }
+    if (fullText) chatHistory.push({ role: 'assistant', content: fullText });
+  } catch (err) {
+    removeTypingIndicator();
+    addChatBubble('assistant', '⚠️ Error: ' + err.message);
+  } finally {
+    streaming = false;
+    document.getElementById('send-btn').disabled = false;
+    document.getElementById('chat-input').focus();
+  }
+}
+
+function clearChat() {
+  chatHistory = [];
+  document.getElementById('chat-messages').innerHTML = '';
+}
+
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+async function loadSessions() {
+  const el = document.getElementById('sessions-list');
+  el.innerHTML = '<p class="text-gray-500 text-sm">Loading…</p>';
+  try {
+    const r = await fetch(BASE + '/api/v1/sessions');
+    const d = await r.json();
+    if (!d.sessions?.length) { el.innerHTML = '<p class="text-gray-500 text-sm">No sessions yet.</p>'; return; }
+    el.innerHTML = d.sessions.map(s => `
+      <div class="bg-surface-card border border-surface-border rounded-lg p-3 mb-2 flex items-center justify-between">
+        <div>
+          <div class="text-sm font-medium text-gray-200">${esc(s.key || s.session_key || '')}</div>
+          <div class="text-xs text-gray-500">${s.message_count || 0} messages · ${s.last_active || ''}</div>
+        </div>
+        <button onclick="deleteSession('${esc(s.key || s.session_key || '')}')"
+          class="text-xs text-red-400 hover:text-red-300 px-2 py-1">Delete</button>
+      </div>
+    `).join('');
+  } catch (e) { el.innerHTML = '<p class="text-red-400 text-sm">Failed to load sessions.</p>'; }
+}
+
+async function deleteSession(key) {
+  if (!confirm('Delete session "' + key + '"?')) return;
+  await fetch(BASE + '/api/v1/sessions/' + encodeURIComponent(key), { method: 'DELETE' });
+  loadSessions();
+}
+
+// ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+async function loadSkills() {
+  const el = document.getElementById('skills-list');
+  el.innerHTML = '<p class="text-gray-500 text-sm">Loading…</p>';
+  try {
+    const r = await fetch(BASE + '/api/v1/skills');
+    const d = await r.json();
+    if (!d.skills?.length) { el.innerHTML = '<p class="text-gray-500 text-sm">No skills defined.</p>'; return; }
+    el.innerHTML = d.skills.map(s => `
+      <div class="bg-surface-card border border-surface-border rounded-lg p-3 mb-2 flex items-center justify-between">
+        <div class="flex-1">
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-medium text-gray-200">${esc(s.label)}</span>
+            ${s.requires_extra ? '<span class="text-[10px] bg-surface-hover text-gray-400 px-1.5 py-0.5 rounded">extra: ' + esc(s.requires_extra) + '</span>' : ''}
+          </div>
+          <div class="text-xs text-gray-500 mt-0.5">${esc(s.description)}</div>
+          <div class="text-xs text-gray-600 mt-0.5">Tools: ${s.tools.map(t => '<code class="text-xs">' + esc(t) + '</code>').join(', ')}</div>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer ml-4">
+          <input type="checkbox" class="sr-only peer" ${s.enabled ? 'checked' : ''}
+            onchange="toggleSkill('${esc(s.name)}', this.checked)" />
+          <div class="w-9 h-5 bg-surface-hover peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full
+            after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-gray-400 after:rounded-full
+            after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-600 peer-checked:after:bg-white"></div>
+        </label>
+      </div>
+    `).join('');
+  } catch (e) { el.innerHTML = '<p class="text-red-400 text-sm">Failed to load skills.</p>'; }
+}
+
+async function toggleSkill(name, enabled) {
+  try {
+    await fetch(BASE + '/api/v1/skills/' + name, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+  } catch (_) {}
+}
+
+// ---------------------------------------------------------------------------
+// Tools
+// ---------------------------------------------------------------------------
+async function loadTools() {
+  const el = document.getElementById('tools-list');
+  el.innerHTML = '<p class="text-gray-500 text-sm">Loading…</p>';
+  try {
+    const r = await fetch(BASE + '/api/v1/tools');
+    const d = await r.json();
+    if (!d.tools?.length) { el.innerHTML = '<p class="text-gray-500 text-sm">No tools registered.</p>'; return; }
+    el.innerHTML = d.tools.map(t => `
+      <div class="bg-surface-card border border-surface-border rounded-lg p-3 mb-2">
+        <div class="text-sm font-medium text-brand-400">${esc(t.name)}</div>
+        <div class="text-xs text-gray-400 mt-1">${esc(t.description || '')}</div>
+      </div>
+    `).join('');
+  } catch (e) { el.innerHTML = '<p class="text-red-400 text-sm">Failed to load tools.</p>'; }
+}
+
+// ---------------------------------------------------------------------------
+// Connectors
+// ---------------------------------------------------------------------------
+async function loadConnectors() {
+  const el = document.getElementById('connectors-list');
+  el.innerHTML = '<p class="text-gray-500 text-sm">Loading…</p>';
+  try {
+    const r = await fetch(BASE + '/api/v1/connectors');
+    const d = await r.json();
+    if (!d.connectors?.length) { el.innerHTML = '<p class="text-gray-500 text-sm">No connectors configured.</p>'; return; }
+    el.innerHTML = d.connectors.map(c => `
+      <div class="bg-surface-card border border-surface-border rounded-lg p-3 mb-2 flex items-center justify-between">
+        <div>
+          <div class="text-sm font-medium text-gray-200">${esc(c.name)}</div>
+          <div class="text-xs text-gray-500">${esc(c.type)}</div>
+        </div>
+        <span class="text-xs px-2 py-0.5 rounded ${c.connected ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'}">
+          ${c.connected ? 'Connected' : 'Disconnected'}
+        </span>
+      </div>
+    `).join('');
+  } catch (e) { el.innerHTML = '<p class="text-red-400 text-sm">Failed to load connectors.</p>'; }
+}
+
+// ---------------------------------------------------------------------------
+// Status
+// ---------------------------------------------------------------------------
+async function loadStatus() {
+  const el = document.getElementById('status-content');
+  el.innerHTML = '<p class="text-gray-500 text-sm">Loading…</p>';
+  try {
+    const r = await fetch(BASE + '/health');
+    const d = await r.json();
+    el.innerHTML = `
+      <div class="space-y-3">
+        <div class="bg-surface-card border border-surface-border rounded-lg p-4">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="w-2 h-2 rounded-full ${d.status === 'ok' ? 'bg-green-400' : 'bg-red-400'}"></span>
+            <span class="text-sm font-medium">Gateway</span>
+          </div>
+          <div class="text-xs text-gray-500">Version: ${esc(d.version || '?')}</div>
+          <div class="text-xs text-gray-500">Status: ${esc(d.status || 'unknown')}</div>
+        </div>
+        ${d.connectors && Object.keys(d.connectors).length ? `
+        <div class="bg-surface-card border border-surface-border rounded-lg p-4">
+          <div class="text-sm font-medium mb-2">Connector Health</div>
+          ${Object.entries(d.connectors).map(([n,s]) => `
+            <div class="flex items-center justify-between text-xs py-1">
+              <span class="text-gray-300">${esc(n)}</span>
+              <span class="${s === 'healthy' ? 'text-green-400' : 'text-red-400'}">${esc(s)}</span>
+            </div>
+          `).join('')}
+        </div>` : ''}
+        ${d.skills ? `
+        <div class="bg-surface-card border border-surface-border rounded-lg p-4">
+          <div class="text-sm font-medium mb-2">Active Skills</div>
+          <div class="text-xs text-gray-400">${Array.isArray(d.skills) ? d.skills.join(', ') : JSON.stringify(d.skills)}</div>
+        </div>` : ''}
+      </div>
+    `;
+  } catch (e) { el.innerHTML = '<p class="text-red-400 text-sm">Failed to load status.</p>'; }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+switchTab('chat');
+document.getElementById('chat-input').focus();
+</script>
+</body>
+</html>

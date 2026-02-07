@@ -279,6 +279,28 @@ class GatewayConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# UI configuration
+# ---------------------------------------------------------------------------
+
+
+class UIConfig(BaseModel):
+    enabled: bool = True
+    theme: str = "dark"
+
+
+# ---------------------------------------------------------------------------
+# Skills configuration
+# ---------------------------------------------------------------------------
+
+
+class SkillsConfig(BaseModel):
+    enabled: list[str] = Field(
+        default_factory=lambda: ["filesystem", "shell", "web_search"],
+        description="List of enabled skill names. Empty = use defaults.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Agent configuration
 # ---------------------------------------------------------------------------
 
@@ -305,6 +327,8 @@ class DatabotConfig(BaseModel):
     channels: ChannelsConfig = Field(default_factory=ChannelsConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     connectors: ConnectorsConfig = Field(default_factory=ConnectorsConfig)
+    skills: SkillsConfig = Field(default_factory=SkillsConfig)
+    ui: UIConfig = Field(default_factory=UIConfig)
     rag: RAGConfig = Field(default_factory=RAGConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     multi_agent: MultiAgentConfig = Field(default_factory=MultiAgentConfig)
