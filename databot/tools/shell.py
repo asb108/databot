@@ -18,11 +18,13 @@ class ShellTool(BaseTool):
         timeout: int = 30,
         restrict_to_workspace: bool = True,
         allowed_commands: list[str] | None = None,
+        max_output_length: int = 10000,
     ):
         self._working_dir = working_dir
         self._timeout = timeout
         self._restrict_to_workspace = restrict_to_workspace
         self._allowed_commands = allowed_commands or []
+        self._max_output_length = max_output_length
 
     @property
     def name(self) -> str:
@@ -81,7 +83,7 @@ class ShellTool(BaseTool):
             output += f"\n[exit code: {proc.returncode}]"
 
             # Truncate very long output
-            max_len = 10000
+            max_len = self._max_output_length
             if len(output) > max_len:
                 output = output[:max_len] + f"\n... (truncated, {len(output)} total chars)"
 

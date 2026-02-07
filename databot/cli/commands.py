@@ -94,6 +94,30 @@ def gateway(
 
 
 @app.command()
+def mcp(
+    transport: str = typer.Option("stdio", "--transport", "-t", help="Transport: stdio or sse."),
+    config: str = typer.Option(None, "-c", "--config", help="Path to config file."),
+    port: int = typer.Option(18791, "-p", "--port", help="SSE transport port."),
+):
+    """Start the MCP (Model Context Protocol) server."""
+    config_path = Path(config) if config else _get_config_path()
+
+    from databot.config.schema import DatabotConfig
+
+    cfg = DatabotConfig.load(config_path)
+
+    if transport == "sse":
+        from databot.mcp import run_sse
+
+        console.print(f"[bold green]databot MCP server (SSE)[/] starting on port {port}")
+        asyncio.run(run_sse(cfg, port=port))
+    else:
+        from databot.mcp import run_stdio
+
+        asyncio.run(run_stdio(cfg))
+
+
+@app.command()
 def status():
     """Show databot status and configuration."""
     config_path = _get_config_path()
@@ -179,7 +203,13 @@ def cron_cmd(
 
 
 def _build_components(cfg):
-    """Build all components from config."""
+    """Build all components from config.
+
+    Returns a ``Components`` namedtuple containing the bus, provider, tools,
+    sessions, memory, workspace, connector_registry, rag_context, tracer,
+    and optional delegator (multi-agent).
+    """
+    from databot.connectors.registry import ConnectorRegistry
     from databot.core.bus import MessageBus
     from databot.memory.manager import MemoryManager
     from databot.providers.litellm_provider import LiteLLMProvider
@@ -206,24 +236,88 @@ def _build_components(cfg):
         default_model=model,
         api_key=provider_cfg.api_key if provider_cfg else None,
         api_base=provider_cfg.api_base if provider_cfg else None,
+        retry_attempts=cfg.agent.retry_attempts,
+        retry_delay=cfg.agent.retry_delay_seconds,
     )
 
     # Storage
     sessions = SessionManager(data_dir)
     memory = MemoryManager(data_dir / "memory.db")
 
+    # ------------------------------------------------------------------
+    # Connector registry
+    # ------------------------------------------------------------------
+    connector_registry = ConnectorRegistry()
+    if cfg.connectors.instances:
+        connector_cfgs = {
+            name: c.to_dict() for name, c in cfg.connectors.instances.items()
+        }
+        connector_registry.load_from_config(connector_cfgs)
+
+    # ------------------------------------------------------------------
+    # Observability (tracing)
+    # ------------------------------------------------------------------
+    tracer = None
+    if cfg.observability.enabled:
+        from databot.observability import Tracer
+
+        tracer = Tracer(
+            service_name=cfg.observability.service_name,
+            endpoint=cfg.observability.otlp_endpoint,
+        )
+
+    # ------------------------------------------------------------------
+    # RAG context
+    # ------------------------------------------------------------------
+    rag_context = None
+    if cfg.rag.enabled:
+        try:
+            from databot.rag import RAGContext, VectorStore
+
+            store = VectorStore(
+                persist_directory=cfg.rag.persist_directory,
+                collection_name=cfg.rag.collection_name,
+                embedding_model=cfg.rag.embedding_model,
+                api_key=cfg.rag.api_key,
+            )
+            rag_context = RAGContext(
+                store=store,
+                max_context_docs=cfg.rag.max_context_docs,
+                max_context_chars=cfg.rag.max_context_chars,
+            )
+        except ImportError:
+            console.print("[yellow]RAG enabled but chromadb not installed. Skipping.[/]")
+
+    # ------------------------------------------------------------------
     # Tools
+    # ------------------------------------------------------------------
     tools = ToolRegistry()
-    _register_tools(tools, cfg, workspace)
+    _register_tools(tools, cfg, workspace, connector_registry)
 
-    return bus, provider, tools, sessions, memory, workspace
+    # ------------------------------------------------------------------
+    # Multi-agent delegator
+    # ------------------------------------------------------------------
+    delegator = None
+    if cfg.multi_agent.enabled:
+        from databot.agents import build_default_agents
+
+        _, _, delegator = build_default_agents(
+            provider=provider,
+            tools=tools,
+            model=model,
+        )
+
+    return (
+        bus, provider, tools, sessions, memory, workspace,
+        connector_registry, rag_context, tracer, delegator,
+    )
 
 
-def _register_tools(tools, cfg, workspace: Path):
+def _register_tools(tools, cfg, workspace: Path, connector_registry=None):
     """Register all tools based on config."""
     from databot.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
     from databot.tools.shell import ShellTool
-    from databot.tools.web import WebFetchTool
+    from databot.tools.web import WebFetchTool, WebSearchTool
 
     allowed_dir = workspace if cfg.security.restrict_to_workspace else None
 
@@ -241,13 +335,21 @@ def _register_tools(tools, cfg, workspace: Path):
                 timeout=cfg.tools.shell.timeout,
                 restrict_to_workspace=cfg.security.restrict_to_workspace,
                 allowed_commands=cfg.security.allowed_commands or None,
+                max_output_length=cfg.tools.shell.max_output_length,
             )
         )
 
     # Web tools
-    tools.register(WebFetchTool())
+    tools.register(WebFetchTool(max_length=cfg.tools.web.max_fetch_length))
+    if cfg.tools.web.search_api_key:
+        tools.register(
+            WebSearchTool(
+                api_key=cfg.tools.web.search_api_key,
+                results_count=cfg.tools.web.search_results_count,
+            )
+        )
 
-    # SQL tool
+    # SQL tool (optionally connector-backed)
     if cfg.tools.sql.connections:
         from databot.tools.sql import SQLTool
 
@@ -256,6 +358,7 @@ def _register_tools(tools, cfg, workspace: Path):
             connections=conn_configs,
             read_only=cfg.tools.sql.read_only,
             max_rows=cfg.tools.sql.max_rows,
+            connector_registry=connector_registry,
         )
         tools.register(sql_tool)
 
@@ -264,7 +367,7 @@ def _register_tools(tools, cfg, workspace: Path):
 
         tools.register(DataQualityTool(sql_tool=sql_tool))
 
-    # Airflow tool
+    # Airflow tool (optionally connector-backed)
     if cfg.tools.airflow.base_url:
         from databot.tools.airflow import AirflowTool
 
@@ -273,21 +376,68 @@ def _register_tools(tools, cfg, workspace: Path):
                 base_url=cfg.tools.airflow.base_url,
                 username=cfg.tools.airflow.username,
                 password=cfg.tools.airflow.password,
+                connector_registry=connector_registry,
             )
         )
 
-    # Lineage tool
-    if cfg.tools.lineage.graph_path:
+    # Lineage tool (with optional Marquez backend)
+    if cfg.tools.lineage.graph_path or cfg.tools.lineage.marquez_url:
         from databot.tools.lineage import LineageTool
 
-        tools.register(LineageTool(graph_path=cfg.tools.lineage.graph_path))
+        tools.register(
+            LineageTool(
+                graph_path=cfg.tools.lineage.graph_path,
+                marquez_url=cfg.tools.lineage.marquez_url,
+            )
+        )
+
+    # ------------------------------------------------------------------
+    # Domain tools from connectors
+    # ------------------------------------------------------------------
+    if connector_registry:
+        from databot.connectors.base import ConnectorType
+
+        if connector_registry.get_by_type(ConnectorType.PROCESSING):
+            from databot.tools.spark import SparkTool
+
+            tools.register(SparkTool(registry=connector_registry))
+
+        if connector_registry.get_by_type(ConnectorType.STREAMING):
+            from databot.tools.kafka import KafkaTool
+
+            tools.register(KafkaTool(registry=connector_registry))
+
+        if connector_registry.get_by_type(ConnectorType.CATALOG):
+            from databot.tools.catalog import CatalogTool
+
+            tools.register(CatalogTool(registry=connector_registry))
+
+    # Plugin tools
+    tools.load_plugins(workspace=workspace)
 
 
 async def _process_single(cfg, message: str) -> str:
     """Process a single message and return the response."""
     from databot.core.loop import AgentLoop
 
-    bus, provider, tools, sessions, memory, workspace = _build_components(cfg)
+    (
+        bus, provider, tools, sessions, memory, workspace,
+        connector_registry, rag_context, tracer, delegator,
+    ) = _build_components(cfg)
+
+    # Connect connectors
+    if connector_registry:
+        await connector_registry.connect_all()
+
+    # If multi-agent is enabled, use the delegator directly
+    if delegator:
+        extra_context = ""
+        if rag_context:
+            extra_context = rag_context.enrich_prompt(message)
+        result = await delegator.handle(message, extra_context=extra_context)
+        if connector_registry:
+            await connector_registry.disconnect_all()
+        return result
 
     loop = AgentLoop(
         bus=bus,
@@ -298,9 +448,18 @@ async def _process_single(cfg, message: str) -> str:
         memory=memory,
         system_prompt=cfg.agent.system_prompt,
         max_iterations=cfg.agent.max_iterations,
+        approval_required_tools=cfg.agent.tool_approval_required,
+        rag_context=rag_context,
     )
 
-    return await loop.process_direct(message)
+    result = await loop.process_direct(message)
+
+    if connector_registry:
+        await connector_registry.disconnect_all()
+    if tracer:
+        tracer.shutdown()
+
+    return result
 
 
 async def _run_interactive(cfg):
@@ -308,7 +467,13 @@ async def _run_interactive(cfg):
     from databot.channels.cli_channel import CLIChannel
     from databot.core.loop import AgentLoop
 
-    bus, provider, tools, sessions, memory, workspace = _build_components(cfg)
+    (
+        bus, provider, tools, sessions, memory, workspace,
+        connector_registry, rag_context, tracer, delegator,
+    ) = _build_components(cfg)
+
+    if connector_registry:
+        await connector_registry.connect_all()
 
     loop = AgentLoop(
         bus=bus,
@@ -319,6 +484,8 @@ async def _run_interactive(cfg):
         memory=memory,
         system_prompt=cfg.agent.system_prompt,
         max_iterations=cfg.agent.max_iterations,
+        approval_required_tools=cfg.agent.tool_approval_required,
+        rag_context=rag_context,
     )
 
     cli = CLIChannel(bus)
@@ -330,19 +497,37 @@ async def _run_interactive(cfg):
     finally:
         loop.stop()
         agent_task.cancel()
+        if connector_registry:
+            await connector_registry.disconnect_all()
+        if tracer:
+            tracer.shutdown()
 
 
 async def _run_gateway(cfg, port: int):
-    """Run the gateway with all channels and cron."""
+    """Run the gateway with all channels, cron, SSE streaming, and connectors."""
     import uvicorn
     from fastapi import FastAPI
+    from loguru import logger
+    from starlette.middleware.cors import CORSMiddleware
 
     from databot.core.loop import AgentLoop
     from databot.cron.service import CronService
+    from databot.middleware.auth import APIKeyAuthMiddleware
+    from databot.middleware.rate_limit import RateLimitMiddleware
     from databot.tools.cron import CronTool
 
-    bus, provider, tools, sessions, memory, workspace = _build_components(cfg)
+    (
+        bus, provider, tools, sessions, memory, workspace,
+        connector_registry, rag_context, tracer, delegator,
+    ) = _build_components(cfg)
+
     data_dir = _get_data_dir()
+
+    # Connect connectors
+    if connector_registry:
+        health = await connector_registry.connect_all()
+        for name, status in health.items():
+            logger.info(f"  Connector '{name}': {status.value}")
 
     # Cron service
     cron_service = CronService(data_dir, bus)
@@ -353,8 +538,8 @@ async def _run_gateway(cfg, port: int):
         if job.enabled:
             try:
                 cron_service.add_job(job.name, job.schedule, job.message, job.channel)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"Failed to load cron job '{job.name}': {e}")
 
     # Agent loop
     loop = AgentLoop(
@@ -366,14 +551,34 @@ async def _run_gateway(cfg, port: int):
         memory=memory,
         system_prompt=cfg.agent.system_prompt,
         max_iterations=cfg.agent.max_iterations,
+        approval_required_tools=cfg.agent.tool_approval_required,
+        rag_context=rag_context,
     )
 
     # FastAPI app
-    api = FastAPI(title="databot", version="0.1.0")
+    api = FastAPI(title="databot", version="0.2.0")
+
+    # Add middleware
+    api.add_middleware(
+        CORSMiddleware,
+        allow_origins=cfg.gateway.cors_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    api.add_middleware(APIKeyAuthMiddleware, api_keys=cfg.gateway.api_keys)
+    api.add_middleware(RateLimitMiddleware, requests_per_minute=cfg.gateway.rate_limit_rpm)
 
     @api.get("/health")
     async def health():
-        return {"status": "ok", "version": "0.1.0"}
+        connector_health = {}
+        if connector_registry:
+            raw = await connector_registry.health_check_all()
+            connector_health = {n: s.value for n, s in raw.items()}
+        return {
+            "status": "ok",
+            "version": "0.2.0",
+            "connectors": connector_health,
+        }
 
     @api.post("/api/v1/message")
     async def post_message(request: dict):
@@ -385,8 +590,70 @@ async def _run_gateway(cfg, port: int):
             chat_id=request.get("chat_id", "api"),
             content=request.get("message", ""),
         )
+
+        # Multi-agent routing if enabled
+        if delegator:
+            extra_context = ""
+            if rag_context:
+                extra_context = rag_context.enrich_prompt(msg.content)
+            result = await delegator.handle_with_metadata(
+                msg.content, extra_context=extra_context,
+            )
+            return {
+                "response": result["response"],
+                "agent": result.get("agent"),
+            }
+
         response = await loop.process_message(msg)
         return {"response": response.content if response else ""}
+
+    @api.post("/api/v1/stream")
+    async def post_message_stream(request: dict):
+        """SSE streaming endpoint."""
+        from databot.core.bus import InboundMessage
+
+        try:
+            from sse_starlette.sse import EventSourceResponse
+        except ImportError:
+            return {"error": "sse-starlette not installed. pip install databot[streaming]"}
+
+        import json as _json
+
+        msg = InboundMessage(
+            channel="api",
+            sender_id=request.get("sender", "api"),
+            chat_id=request.get("chat_id", "api"),
+            content=request.get("message", ""),
+            stream=True,
+        )
+
+        async def _event_generator():
+            async for event in loop.process_message_stream(msg):
+                yield {
+                    "event": event.event_type,
+                    "data": _json.dumps({
+                        "type": event.event_type,
+                        "data": event.data,
+                        "tool_name": event.tool_name,
+                    }),
+                }
+
+        return EventSourceResponse(_event_generator())
+
+    @api.get("/api/v1/connectors")
+    async def list_connectors():
+        """List all registered connectors and their status."""
+        if not connector_registry:
+            return {"connectors": []}
+        result = []
+        for conn in connector_registry.list_all():
+            result.append({
+                "name": conn.name,
+                "type": conn.connector_type.value,
+                "connected": conn.is_connected,
+                "capabilities": conn.capabilities(),
+            })
+        return {"connectors": result}
 
     # Google Chat routes
     if cfg.channels.gchat.enabled:
@@ -402,11 +669,36 @@ async def _run_gateway(cfg, port: int):
         if cfg.channels.gchat.mode == "app":
             api.include_router(gchat.get_fastapi_routes())
 
+    # Slack channel
+    if cfg.channels.slack.enabled:
+        from databot.channels.slack import SlackChannel
+
+        slack = SlackChannel(
+            bus=bus,
+            bot_token=cfg.channels.slack.bot_token,
+            app_token=cfg.channels.slack.app_token,
+            signing_secret=cfg.channels.slack.signing_secret,
+        )
+        await slack.start()
+        logger.info("Slack channel started")
+
+    # Discord channel
+    if cfg.channels.discord.enabled:
+        from databot.channels.discord import DiscordChannel
+
+        discord_channel = DiscordChannel(
+            bus=bus,
+            bot_token=cfg.channels.discord.bot_token,
+            command_prefix=cfg.channels.discord.command_prefix,
+        )
+        asyncio.create_task(discord_channel.start())
+        logger.info("Discord channel started")
+
     # Start services
     agent_task = asyncio.create_task(loop.run())
     cron_task = asyncio.create_task(cron_service.run())
 
-    config = uvicorn.Config(api, host="0.0.0.0", port=port, log_level="info")
+    config = uvicorn.Config(api, host=cfg.gateway.host, port=port, log_level="info")
     server = uvicorn.Server(config)
 
     console.print(f"[bold green]databot gateway[/] starting on port {port}")
@@ -420,6 +712,10 @@ async def _run_gateway(cfg, port: int):
         cron_service.stop()
         agent_task.cancel()
         cron_task.cancel()
+        if connector_registry:
+            await connector_registry.disconnect_all()
+        if tracer:
+            tracer.shutdown()
 
 
 if __name__ == "__main__":

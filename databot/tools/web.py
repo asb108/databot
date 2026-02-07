@@ -12,6 +12,9 @@ from databot.tools.base import BaseTool
 class WebFetchTool(BaseTool):
     """Fetch content from a URL."""
 
+    def __init__(self, max_length: int = 15000):
+        self._max_length = max_length
+
     @property
     def name(self) -> str:
         return "web_fetch"
@@ -36,7 +39,7 @@ class WebFetchTool(BaseTool):
                 resp.raise_for_status()
 
                 content = resp.text
-                max_len = 15000
+                max_len = self._max_length
                 if len(content) > max_len:
                     content = content[:max_len] + "\n... (truncated)"
                 return content
@@ -47,8 +50,9 @@ class WebFetchTool(BaseTool):
 class WebSearchTool(BaseTool):
     """Search the web using Brave Search API."""
 
-    def __init__(self, api_key: str | None = None):
+    def __init__(self, api_key: str | None = None, results_count: int = 5):
         self._api_key = api_key
+        self._results_count = results_count
 
     @property
     def name(self) -> str:
@@ -77,7 +81,7 @@ class WebSearchTool(BaseTool):
             async with httpx.AsyncClient(timeout=15) as client:
                 resp = await client.get(
                     "https://api.search.brave.com/res/v1/web/search",
-                    params={"q": query, "count": 5},
+                    params={"q": query, "count": self._results_count},
                     headers={
                         "Accept": "application/json",
                         "X-Subscription-Token": self._api_key,

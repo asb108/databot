@@ -18,6 +18,13 @@ channels:
     enabled: false
     mode: webhook
     webhook_url: ${GCHAT_WEBHOOK_URL}
+  slack:
+    enabled: false
+    bot_token: ${SLACK_BOT_TOKEN}
+    app_token: ${SLACK_APP_TOKEN}
+  discord:
+    enabled: false
+    bot_token: ${DISCORD_BOT_TOKEN}
 
 tools:
   sql:
@@ -32,12 +39,70 @@ tools:
 
   lineage:
     graph_path: ""
+    marquez_url: ""  # e.g. http://localhost:5000
 
   shell:
     enabled: true
     restrict_to_workspace: true
     timeout: 30
     allowed_commands: []
+
+  web:
+    search_api_key: ""
+    search_results_count: 5
+    max_fetch_length: 15000
+
+  data_quality:
+    enabled: true
+
+# Connector framework — named connector instances
+connectors:
+  instances: {}
+  # Example:
+  # instances:
+  #   prod_mysql:
+  #     type: sql
+  #     driver: mysql
+  #     host: ${DB_HOST}
+  #     port: 3306
+  #     database: analytics
+  #     username: ${DB_USER}
+  #     password: ${DB_PASS}
+  #   livy:
+  #     type: spark
+  #     mode: livy
+  #     base_url: http://livy:8998
+  #   kafka_prod:
+  #     type: kafka
+  #     base_url: http://kafka-rest:8082
+  #     schema_registry_url: http://schema-registry:8081
+  #     connect_url: http://kafka-connect:8083
+  #   iceberg_catalog:
+  #     type: catalog
+  #     protocol: iceberg
+  #     base_url: http://iceberg-rest:8181
+
+# RAG / vector memory
+rag:
+  enabled: false
+  persist_directory: ""  # Empty = in-memory
+  collection_name: databot
+  embedding_model: ""  # e.g. text-embedding-3-small
+  max_context_docs: 5
+  max_context_chars: 4000
+
+# Observability
+observability:
+  enabled: false
+  service_name: databot
+  otlp_endpoint: ""  # e.g. http://localhost:4317
+
+# Multi-agent routing
+multi_agent:
+  enabled: false
+  # When enabled, the Router/Delegator pattern is used instead of the
+  # single AgentLoop. The router LLM call examines each message and
+  # dispatches it to the right specialist agent.
 
 cron:
   jobs: []
@@ -46,6 +111,17 @@ security:
   restrict_to_workspace: true
   allowed_commands: []
 
+gateway:
+  port: 18790
+  host: "0.0.0.0"
+  api_keys: []
+  rate_limit_rpm: 60
+  cors_origins: ["*"]
+
 agent:
   max_iterations: 20
+  max_session_messages: 50
   system_prompt: ""
+  retry_attempts: 3
+  retry_delay_seconds: 1.0
+  tool_approval_required: []

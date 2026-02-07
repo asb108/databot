@@ -10,11 +10,27 @@ from databot.tools.base import BaseTool
 
 
 class AirflowTool(BaseTool):
-    """Interact with Apache Airflow via REST API."""
+    """Interact with Apache Airflow via REST API.
 
-    def __init__(self, base_url: str = "", username: str = "", password: str = ""):
+    When a ``connector_registry`` is provided and contains a REST connector
+    named ``"airflow"``, HTTP calls are delegated through the connector
+    framework (gaining retry, auth, and observability).  Otherwise the
+    legacy direct-httpx path is used.
+    """
+
+    def __init__(
+        self,
+        base_url: str = "",
+        username: str = "",
+        password: str = "",
+        connector_registry: Any | None = None,
+    ):
         self._base_url = base_url.rstrip("/")
         self._auth = (username, password) if username else None
+        self._connector_registry = connector_registry
+        self._connector = None
+        if connector_registry:
+            self._connector = connector_registry.get("airflow")
 
     @property
     def name(self) -> str:
@@ -92,7 +108,29 @@ class AirflowTool(BaseTool):
             return f"Airflow API error: {str(e)}"
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> dict:
-        """Make an authenticated request to the Airflow API."""
+        """Make an authenticated request to the Airflow API.
+
+        Delegates to the connector framework when available, otherwise
+        falls back to direct httpx calls.
+        """
+        if self._connector:
+            try:
+                result = await self._connector.execute(
+                    "request",
+                    method=method,
+                    path=f"/api/v1{path}",
+                    **kwargs,
+                )
+                if result.success and isinstance(result.data, dict):
+                    return result.data
+                elif result.success:
+                    return {"raw": result.data}
+                else:
+                    raise Exception(result.error)
+            except Exception:
+                # Fall through to legacy path
+                pass
+
         url = f"{self._base_url}/api/v1{path}"
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.request(

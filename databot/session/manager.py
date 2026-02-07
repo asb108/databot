@@ -11,16 +11,21 @@ from databot.session.store import SessionStore
 class Session:
     """A conversation session with message history."""
 
-    def __init__(self, key: str, history: list[dict[str, Any]] | None = None):
+    def __init__(
+        self,
+        key: str,
+        history: list[dict[str, Any]] | None = None,
+        max_messages: int = 50,
+    ):
         self.key = key
         self._history: list[dict[str, Any]] = history or []
+        self._max_messages = max_messages
 
     def add_message(self, role: str, content: str) -> None:
         self._history.append({"role": role, "content": content})
         # Keep history bounded to avoid context overflow
-        max_messages = 50
-        if len(self._history) > max_messages:
-            self._history = self._history[-max_messages:]
+        if len(self._history) > self._max_messages:
+            self._history = self._history[-self._max_messages:]
 
     def get_history(self) -> list[dict[str, Any]]:
         return list(self._history)

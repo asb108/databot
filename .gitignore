@@ -33,3 +33,7 @@ Thumbs.db
 *.db
 *.sqlite
 .databot/
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md

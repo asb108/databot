@@ -1,5 +1,4 @@
 """Plugin discovery via entry points.
-from __future__ import annotations
 
 This module provides automatic discovery of plugins registered via Python
 entry points. Third-party packages can register their tools, channels, and
@@ -19,6 +18,8 @@ Example pyproject.toml for a plugin:
 Each entry point should reference a class that inherits from the appropriate
 base class (BaseTool, BaseChannel, or LLMProvider).
 """
+
+from __future__ import annotations
 
 from importlib.metadata import entry_points
 from typing import TYPE_CHECKING

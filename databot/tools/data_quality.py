@@ -1,13 +1,36 @@
-"""Data quality check tool."""
+"""Data quality check tool with SQL injection protection."""
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from databot.tools.base import BaseTool
 
 if TYPE_CHECKING:
     from databot.tools.sql import SQLTool
+
+# Strict pattern: only allows alphanumeric, underscore, dot (for schema.table), and backtick
+_IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.`]*$")
+
+
+def _validate_identifier(value: str, label: str = "identifier") -> str:
+    """Validate that a value is a safe SQL identifier (table or column name).
+
+    Raises:
+        ValueError: If the identifier contains unsafe characters.
+    """
+    # Strip surrounding backticks for validation
+    stripped = value.strip("`")
+    if not stripped or not _IDENTIFIER_RE.match(stripped):
+        raise ValueError(
+            f"Invalid {label}: '{value}'. "
+            f"Only alphanumeric characters, underscores, dots, and backticks are allowed."
+        )
+    # Prevent excessively long identifiers
+    if len(stripped) > 128:
+        raise ValueError(f"Invalid {label}: '{value}' exceeds maximum length of 128 characters.")
+    return value
 
 
 class DataQualityTool(BaseTool):
@@ -72,6 +95,12 @@ class DataQualityTool(BaseTool):
         if not self._sql:
             return "Error: SQL tool not configured. Cannot run DQ checks."
 
+        # Validate table name to prevent SQL injection
+        try:
+            _validate_identifier(table, "table")
+        except ValueError as e:
+            return f"Error: {e}"
+
         try:
             if check_type == "row_count":
                 return await self._row_count(connection, table)
@@ -79,11 +108,19 @@ class DataQualityTool(BaseTool):
                 column = kwargs.get("column", "")
                 if not column:
                     return "Error: column is required for null_check."
+                try:
+                    _validate_identifier(column, "column")
+                except ValueError as e:
+                    return f"Error: {e}"
                 return await self._null_check(connection, table, column)
             elif check_type == "freshness":
                 ts_col = kwargs.get("timestamp_column", "")
                 if not ts_col:
                     return "Error: timestamp_column is required for freshness check."
+                try:
+                    _validate_identifier(ts_col, "timestamp_column")
+                except ValueError as e:
+                    return f"Error: {e}"
                 threshold = kwargs.get("threshold_hours", 24)
                 return await self._freshness(connection, table, ts_col, threshold)
             elif check_type == "compare":
@@ -91,6 +128,10 @@ class DataQualityTool(BaseTool):
                 src_table = kwargs.get("source_table", "")
                 if not src_conn or not src_table:
                     return "Error: source_connection and source_table required for compare."
+                try:
+                    _validate_identifier(src_table, "source_table")
+                except ValueError as e:
+                    return f"Error: {e}"
                 return await self._compare(connection, table, src_conn, src_table)
             else:
                 return f"Unknown check type: {check_type}"

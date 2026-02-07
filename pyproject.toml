@@ -50,12 +50,38 @@ sql = [
 lineage = [
     "networkx>=3.0.0",
 ]
+spark = [
+    "httpx>=0.25.0",
+]
+kafka = [
+    "httpx>=0.25.0",
+]
+catalog = [
+    "httpx>=0.25.0",
+]
+glue = [
+    "boto3>=1.28.0",
+]
+streaming = [
+    "sse-starlette>=1.6.0",
+]
+observability = [
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-otlp>=1.20.0",
+]
+rag = [
+    "chromadb>=0.4.0",
+]
+mcp = [
+    "mcp>=1.0.0",
+]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "ruff>=0.1.0",
 ]
-all = ["databot[gchat,sql,lineage,dev]"]
+all = ["databot[gchat,sql,lineage,spark,kafka,catalog,glue,streaming,observability,rag,mcp,dev]"]
 
 [project.scripts]
 databot = "databot.cli.commands:app"
@@ -72,6 +98,13 @@ databot = "databot.cli.commands:app"
 
 [project.entry-points."databot.providers"]
 # Third-party LLM providers can register here
+
+[project.entry-points."databot.connectors"]
+sql = "databot.connectors.sql_connector:SQLConnector"
+rest_api = "databot.connectors.rest_connector:RESTConnector"
+catalog = "databot.connectors.catalog_connector:CatalogConnector"
+spark = "databot.connectors.spark_connector:SparkConnector"
+kafka = "databot.connectors.kafka_connector:KafkaConnector"
 
 [build-system]
 requires = ["hatchling"]
@@ -91,3 +124,20 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = true
+
+[tool.black]
+line-length = 88
+target-version = ["py39"]
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 88
+multi_line_output = 3
