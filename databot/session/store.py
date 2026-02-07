@@ -58,3 +58,24 @@ class SessionStore:
         with sqlite3.connect(self.db_path) as conn:
             rows = conn.execute("SELECT key FROM sessions ORDER BY updated_at DESC").fetchall()
             return [row[0] for row in rows]
+
+    def get_metadata(self, key: str) -> dict[str, Any]:
+        """Get session metadata (key, timestamps, message count)."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT key, history, created_at, updated_at FROM sessions WHERE key = ?",
+                (key,),
+            ).fetchone()
+            if not row:
+                return {"key": key, "created_at": "", "updated_at": "", "message_count": 0}
+            try:
+                messages = json.loads(row[1])
+                count = len(messages)
+            except Exception:
+                count = 0
+            return {
+                "key": row[0],
+                "created_at": row[2] or "",
+                "updated_at": row[3] or "",
+                "message_count": count,
+            }

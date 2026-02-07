@@ -690,6 +690,48 @@ async def _run_gateway(cfg, port: int):
             )
         return {"connectors": result}
 
+    @api.get("/api/v1/sessions")
+    async def list_sessions():
+        """List all sessions with metadata."""
+        keys = sessions.store.list_keys()
+        result = []
+        for key in keys:
+            meta = sessions.store.get_metadata(key)
+            result.append(meta)
+        return {"sessions": result}
+
+    @api.get("/api/v1/sessions/{key:path}")
+    async def get_session(key: str):
+        """Get session history by key."""
+        history = sessions.store.get_history(key)
+        if not history and key not in sessions.store.list_keys():
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse({"error": "Session not found"}, status_code=404)
+        return {"key": key, "messages": history}
+
+    @api.delete("/api/v1/sessions/{key:path}")
+    async def delete_session_endpoint(key: str):
+        """Delete a session."""
+        await sessions.delete(key)
+        return {"deleted": key}
+
+    @api.get("/api/v1/tools")
+    async def list_tools():
+        """List all registered tools and their schemas."""
+        defs = tools.get_definitions()
+        result = []
+        for d in defs:
+            fn = d.get("function", d)
+            result.append(
+                {
+                    "name": fn.get("name", ""),
+                    "description": fn.get("description", ""),
+                    "parameters": fn.get("parameters", {}),
+                }
+            )
+        return {"tools": result}
+
     # Google Chat routes
     if cfg.channels.gchat.enabled:
         from databot.channels.gchat import GChatChannel
