@@ -1,6 +1,6 @@
 [project]
 name = "databot-ai"
-version = "0.1.0"
+version = "0.2.0"
 description = "A lightweight, open-source AI assistant for data platform operations"
 requires-python = ">=3.9"
 license = {text = "MIT"}

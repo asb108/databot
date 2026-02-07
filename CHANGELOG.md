@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-02-07
+
 ### Added
+- **Connector framework** — pluggable SQL, REST, Spark, Kafka, and Data Catalog connectors with factory pattern
+- **MCP (Model Context Protocol) server** — expose databot tools over stdio/SSE for IDE integration
+- **Multi-agent architecture** — coordinator delegates to specialist sub-agents (SQL, pipeline, quality)
+- **RAG pipeline** — ChromaDB-backed document retrieval for runbook-augmented answers
+- **Observability** — OpenTelemetry tracing with span context, distributed trace propagation
+- **SSE streaming** — real-time token streaming via Server-Sent Events endpoint
+- **Connector config** in YAML — declare SQL/Spark/Kafka/Catalog connections with health checks
+- Spark tool — job submission, status, logs, cluster info via Spark REST API
+- Kafka tool — topic listing, consumer group lag, message peek via Kafka REST Proxy
+- Catalog tool — dataset search, schema/lineage/quality lookup via data catalog APIs
+- Integration bootstrap — `_build_components` wires connectors, RAG, multi-agent, tracing into CLI/gateway
+- `databot mcp` CLI command to launch MCP server
+
+### Changed
+- `SQLTool` and `AirflowTool` now delegate to connectors instead of direct DB/HTTP calls
+- Agent loop supports streaming token callbacks
+- Gateway serves SSE stream at `/v1/stream`
+
+### v0.1.1 (included)
 - **Slack channel** integration via Slack Bolt (Socket Mode + HTTP)
 - **Discord channel** integration via discord.py
 - **Gateway authentication** with API key support (`Authorization: Bearer` and `X-API-Key` headers)
@@ -20,21 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SQL identifier validation** in Data Quality tool to prevent SQL injection
 - **Multi-statement detection** in SQL read-only enforcement
 - **CTE write detection** (e.g., `WITH cte AS (...) INSERT INTO ...`)
-- New config sections: `gateway`, `tools.web`, `channels.slack`, `channels.discord`
-- Configurable: `max_session_messages`, `shell.max_output_length`, `web.max_fetch_length`, `cron.check_interval_seconds`
-- Comprehensive test suite: SQL tool, DQ tool, config, middleware, session/memory, context builder, web tools
+- Comprehensive test suite: 188 tests covering all modules
 - CHANGELOG.md, CODE_OF_CONDUCT.md, issue templates, PR template
-- Pre-commit configuration with ruff and mypy
 - Docker security hardening (non-root user, read-only filesystem)
-
-### Changed
-- SQL tool now runs blocking database I/O in `asyncio.to_thread()` to avoid blocking the event loop
-- Error messages from the agent loop no longer expose raw exception details to users
-- Message bus now logs outbound handler failures instead of silently swallowing them
-- Plugin loader docstring syntax error fixed (`from __future__` was inside docstring)
-- `WebFetchTool` and `WebSearchTool` constructors now accept configurable parameters
-- `ShellTool` max output length is now configurable
-- `Session.max_messages` is now configurable via `agent.max_session_messages`
 
 ### Security
 - SQL injection prevention in Data Quality tool via identifier validation
