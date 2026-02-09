@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 
 # ===================================================================
 # MCP server tests
@@ -20,7 +17,6 @@ class TestMCPServerBuild:
 
     def test_import_guard(self):
         """If mcp is not installed, building the server raises ImportError."""
-        import importlib
         import sys
 
         # Simulate mcp not installed
@@ -37,8 +33,8 @@ class TestMCPServerBuild:
         except ImportError:
             pytest.skip("mcp not installed")
 
-        from databot.mcp import _build_mcp_server
         from databot.config.schema import DatabotConfig
+        from databot.mcp import _build_mcp_server
 
         cfg = DatabotConfig()
         server = _build_mcp_server(cfg)
@@ -78,8 +74,16 @@ class TestBuildComponents:
         assert len(result) == 11, f"Expected 11-tuple, got {len(result)}-tuple"
 
         (
-            bus, provider, tools, sessions, memory, workspace,
-            connector_registry, rag_context, tracer, delegator,
+            bus,
+            provider,
+            tools,
+            sessions,
+            memory,
+            workspace,
+            connector_registry,
+            rag_context,
+            tracer,
+            delegator,
             skill_registry,
         ) = result
 

@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,7 +15,6 @@ from databot.connectors.base import (
 )
 from databot.connectors.factory import create_connector
 from databot.connectors.registry import ConnectorRegistry
-
 
 # ---------------------------------------------------------------------------
 # ConnectorResult
@@ -175,6 +172,46 @@ class TestConnectorRegistry:
         await conn.connect()
         health = await reg.health_check_all()
         assert health["db1"] == ConnectorStatus.HEALTHY
+
+    @pytest.mark.asyncio
+    async def test_parallel_connect_all(self):
+        """connect_all should process connectors in parallel."""
+        import time
+
+        reg = ConnectorRegistry()
+
+        class SlowConnector(DummyConnector):
+            async def connect(self):
+                await asyncio.sleep(0.1)
+                await super().connect()
+
+        for i in range(5):
+            reg.register(SlowConnector(f"db{i}"))
+
+        start = time.monotonic()
+        results = await reg.connect_all()
+        elapsed = time.monotonic() - start
+
+        # 5 connectors × 0.1s each — if parallel, < 0.3s; if sequential, > 0.5s
+        assert elapsed < 0.4, f"connect_all took {elapsed:.2f}s — should be parallel"
+        assert all(s == ConnectorStatus.HEALTHY for s in results.values())
+
+    @pytest.mark.asyncio
+    async def test_health_check_caching(self):
+        """Subsequent health_check_all calls use cache if still fresh."""
+        reg = ConnectorRegistry()
+        conn = DummyConnector("db1")
+        reg.register(conn)
+        await conn.connect()
+
+        # First call populates cache
+        h1 = await reg.health_check_all()
+        assert h1["db1"] == ConnectorStatus.HEALTHY
+
+        # Disconnect the connector — but cache should still return HEALTHY
+        await conn.disconnect()
+        h2 = await reg.health_check_all()
+        assert h2["db1"] == ConnectorStatus.HEALTHY  # cached value
 
 
 # ---------------------------------------------------------------------------

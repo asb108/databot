@@ -105,3 +105,47 @@ class TestSessionManager:
         keys = manager.list_sessions()
         assert "test:1" in keys
         assert "test:2" in keys
+
+    def test_lru_eviction(self, tmp_path):
+        """Session cache evicts LRU entries when max_cached_sessions is exceeded."""
+        manager = SessionManager(tmp_path, max_cached_sessions=3)
+
+        # Create 4 sessions — only 3 should remain in cache
+        for i in range(4):
+            s = manager.get_or_create(f"s{i}")
+            s.add_message("user", f"msg {i}")
+            manager.save(s)
+
+        assert manager.cache_size == 3
+        # s0 should have been evicted (least recently used)
+        assert "s0" not in manager._cache
+        # s1, s2, s3 should still be cached
+        assert "s1" in manager._cache
+        assert "s3" in manager._cache
+
+    def test_evicted_session_persisted(self, tmp_path):
+        """Evicted sessions are persisted and can be reloaded."""
+        manager = SessionManager(tmp_path, max_cached_sessions=2)
+
+        s = manager.get_or_create("old")
+        s.add_message("user", "remember me")
+        manager.save(s)
+
+        # Create 2 more to push "old" out of cache
+        manager.get_or_create("new1")
+        manager.get_or_create("new2")
+
+        assert "old" not in manager._cache
+
+        # Reloading should restore from DB
+        reloaded = manager.get_or_create("old")
+        assert reloaded.get_history()[0]["content"] == "remember me"
+
+    def test_configurable_max_session_messages(self, tmp_path):
+        """max_session_messages is passed through to new sessions."""
+        manager = SessionManager(tmp_path, max_session_messages=5)
+        s = manager.get_or_create("test")
+        for i in range(10):
+            s.add_message("user", f"msg {i}")
+        assert len(s.get_history()) == 5
+        assert s.get_history()[0]["content"] == "msg 5"

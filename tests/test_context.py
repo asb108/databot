@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -55,9 +54,7 @@ class TestContextBuilder:
 
     def test_media_handling(self, builder):
         media = [{"type": "image_url", "image_url": {"url": "https://example.com/img.png"}}]
-        messages = builder.build_messages(
-            history=[], current_message="look at this", media=media
-        )
+        messages = builder.build_messages(history=[], current_message="look at this", media=media)
         user_msg = messages[1]
         # Should be multipart
         assert isinstance(user_msg["content"], list)

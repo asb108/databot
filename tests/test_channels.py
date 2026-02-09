@@ -1,9 +1,10 @@
 from __future__ import annotations
+
 """Tests for channel implementations."""
 
 import pytest
 
-from databot.core.bus import MessageBus, OutboundMessage
+from databot.core.bus import MessageBus
 
 
 class TestGChatChannel:

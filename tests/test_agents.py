@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from typing import Any
-from unittest.mock import AsyncMock
-
 import pytest
 
 from databot.agents import (
@@ -17,7 +13,6 @@ from databot.agents import (
 )
 from databot.providers.base import LLMProvider, LLMResponse, ToolCall
 from databot.tools.base import ToolRegistry
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -84,13 +79,15 @@ class TestSpecialistAgent:
     @pytest.mark.asyncio
     async def test_run_with_tool_calls(self):
         """Agent that makes a tool call, then responds."""
-        provider = MockProvider([
-            LLMResponse(
-                content=None,
-                tool_calls=[ToolCall(id="tc1", name="sql", arguments={"query": "SELECT 1"})],
-            ),
-            LLMResponse(content="The result is 1."),
-        ])
+        provider = MockProvider(
+            [
+                LLMResponse(
+                    content=None,
+                    tool_calls=[ToolCall(id="tc1", name="sql", arguments={"query": "SELECT 1"})],
+                ),
+                LLMResponse(content="The result is 1."),
+            ]
+        )
         spec = AgentSpec(name="sql", description="SQL", system_prompt="sys", tool_names=["sql"])
         tools = ToolRegistry()
 
@@ -175,9 +172,9 @@ class TestRouter:
     @pytest.mark.asyncio
     async def test_routes_to_correct_agent(self):
         """Router returns a valid agent name from JSON response."""
-        provider = MockProvider([
-            LLMResponse(content='{"agent": "sql", "reasoning": "user asked SQL"}')
-        ])
+        provider = MockProvider(
+            [LLMResponse(content='{"agent": "sql", "reasoning": "user asked SQL"}')]
+        )
         agents = {
             "sql": SpecialistAgent(
                 AgentSpec(name="sql", description="SQL", system_prompt="sys"),
@@ -197,9 +194,7 @@ class TestRouter:
     @pytest.mark.asyncio
     async def test_falls_back_to_general(self):
         """Unknown agent name falls back to general."""
-        provider = MockProvider([
-            LLMResponse(content='{"agent": "unknown_agent"}')
-        ])
+        provider = MockProvider([LLMResponse(content='{"agent": "unknown_agent"}')])
         agents = {
             "general": SpecialistAgent(
                 AgentSpec(name="general", description="General", system_prompt="sys"),
@@ -214,9 +209,7 @@ class TestRouter:
     @pytest.mark.asyncio
     async def test_handles_non_json_response(self):
         """Router handles plain text response gracefully."""
-        provider = MockProvider([
-            LLMResponse(content="I think the sql agent should handle this")
-        ])
+        provider = MockProvider([LLMResponse(content="I think the sql agent should handle this")])
         agents = {
             "sql": SpecialistAgent(
                 AgentSpec(name="sql", description="SQL", system_prompt="sys"),
@@ -243,12 +236,14 @@ class TestDelegator:
     @pytest.mark.asyncio
     async def test_handle(self):
         """Delegator routes and gets response."""
-        provider = MockProvider([
-            # Router response
-            LLMResponse(content='{"agent": "general"}'),
-            # Agent response
-            LLMResponse(content="Hello! How can I help?"),
-        ])
+        provider = MockProvider(
+            [
+                # Router response
+                LLMResponse(content='{"agent": "general"}'),
+                # Agent response
+                LLMResponse(content="Hello! How can I help?"),
+            ]
+        )
         agents = {
             "general": SpecialistAgent(
                 AgentSpec(name="general", description="General", system_prompt="sys"),
@@ -264,10 +259,12 @@ class TestDelegator:
 
     @pytest.mark.asyncio
     async def test_handle_with_metadata(self):
-        provider = MockProvider([
-            LLMResponse(content='{"agent": "general"}'),
-            LLMResponse(content="response text"),
-        ])
+        provider = MockProvider(
+            [
+                LLMResponse(content='{"agent": "general"}'),
+                LLMResponse(content="response text"),
+            ]
+        )
         agents = {
             "general": SpecialistAgent(
                 AgentSpec(name="general", description="General assistant", system_prompt="sys"),

@@ -8,6 +8,9 @@ from typing import Any, Callable
 
 from loguru import logger
 
+# Sensible default limits — prevent unbounded memory growth under load.
+DEFAULT_MAX_QUEUE_SIZE: int = 1000
+
 
 @dataclass
 class InboundMessage:
@@ -47,27 +50,68 @@ class StreamEvent:
 
 
 class MessageBus:
-    """Async message bus using queues."""
+    """Async message bus with bounded queues and parallel handler dispatch."""
 
-    def __init__(self):
-        self._inbound: asyncio.Queue[InboundMessage] = asyncio.Queue()
-        self._outbound: asyncio.Queue[OutboundMessage] = asyncio.Queue()
+    def __init__(self, max_queue_size: int = DEFAULT_MAX_QUEUE_SIZE):
+        self._inbound: asyncio.Queue[InboundMessage] = asyncio.Queue(
+            maxsize=max_queue_size,
+        )
+        self._outbound: asyncio.Queue[OutboundMessage] = asyncio.Queue(
+            maxsize=max_queue_size,
+        )
         self._outbound_handlers: list[Callable] = []
         self._stream_handlers: list[Callable] = []
 
+    # ------------------------------------------------------------------
+    # Queue stats
+    # ------------------------------------------------------------------
+
+    @property
+    def inbound_size(self) -> int:
+        return self._inbound.qsize()
+
+    @property
+    def outbound_size(self) -> int:
+        return self._outbound.qsize()
+
+    # ------------------------------------------------------------------
+    # Inbound
+    # ------------------------------------------------------------------
+
     async def publish_inbound(self, msg: InboundMessage) -> None:
-        await self._inbound.put(msg)
+        try:
+            self._inbound.put_nowait(msg)
+        except asyncio.QueueFull:
+            logger.warning("Inbound queue full — dropping oldest message")
+            # Drop oldest to make room (back-pressure strategy)
+            try:
+                self._inbound.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+            await self._inbound.put(msg)
 
     async def consume_inbound(self) -> InboundMessage:
         return await self._inbound.get()
 
+    # ------------------------------------------------------------------
+    # Outbound — handlers run in parallel via asyncio.gather
+    # ------------------------------------------------------------------
+
     async def publish_outbound(self, msg: OutboundMessage) -> None:
-        await self._outbound.put(msg)
-        for handler in self._outbound_handlers:
-            try:
-                await handler(msg)
-            except Exception as e:
-                logger.error(f"Outbound handler {handler.__qualname__} failed: {e}")
+        try:
+            self._outbound.put_nowait(msg)
+        except asyncio.QueueFull:
+            logger.warning("Outbound queue full — awaiting space")
+            await self._outbound.put(msg)
+
+        if self._outbound_handlers:
+            results = await asyncio.gather(
+                *(handler(msg) for handler in self._outbound_handlers),
+                return_exceptions=True,
+            )
+            for handler, result in zip(self._outbound_handlers, results):
+                if isinstance(result, Exception):
+                    logger.error(f"Outbound handler {handler.__qualname__} failed: {result}")
 
     def on_outbound(self, handler: Callable) -> None:
         """Register a handler for outbound messages."""
@@ -76,13 +120,21 @@ class MessageBus:
     async def consume_outbound(self) -> OutboundMessage:
         return await self._outbound.get()
 
+    # ------------------------------------------------------------------
+    # Streaming — handlers run in parallel
+    # ------------------------------------------------------------------
+
     async def publish_stream_event(self, event: StreamEvent) -> None:
-        """Publish a streaming event to all stream handlers."""
-        for handler in self._stream_handlers:
-            try:
-                await handler(event)
-            except Exception as e:
-                logger.error(f"Stream handler {handler.__qualname__} failed: {e}")
+        """Publish a streaming event to all stream handlers in parallel."""
+        if not self._stream_handlers:
+            return
+        results = await asyncio.gather(
+            *(handler(event) for handler in self._stream_handlers),
+            return_exceptions=True,
+        )
+        for handler, result in zip(self._stream_handlers, results):
+            if isinstance(result, Exception):
+                logger.error(f"Stream handler {handler.__qualname__} failed: {result}")
 
     def on_stream(self, handler: Callable) -> None:
         """Register a handler for stream events."""

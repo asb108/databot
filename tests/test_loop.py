@@ -1,8 +1,8 @@
 from __future__ import annotations
+
 """Tests for the core agent loop."""
 
 import asyncio
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -102,9 +102,7 @@ class TestMessageBus:
     @pytest.mark.asyncio
     async def test_publish_consume(self):
         bus = MessageBus()
-        msg = InboundMessage(
-            channel="cli", sender_id="user", chat_id="test", content="hello"
-        )
+        msg = InboundMessage(channel="cli", sender_id="user", chat_id="test", content="hello")
         await bus.publish_inbound(msg)
         received = await bus.consume_inbound()
         assert received.content == "hello"
@@ -125,3 +123,58 @@ class TestMessageBus:
         )
         assert len(received) == 1
         assert received[0].content == "response"
+
+    @pytest.mark.asyncio
+    async def test_bounded_queue(self):
+        """Queue rejects messages beyond maxsize (backpressure)."""
+        bus = MessageBus(max_queue_size=3)
+        for i in range(5):
+            msg = InboundMessage(channel="cli", sender_id="u", chat_id="t", content=f"m{i}")
+            await bus.publish_inbound(msg)
+        # Queue should not exceed maxsize
+        assert bus.inbound_size <= 3
+
+    @pytest.mark.asyncio
+    async def test_parallel_outbound_handlers(self):
+        """Multiple outbound handlers execute concurrently."""
+        bus = MessageBus()
+        call_order = []
+
+        async def slow_handler(msg):
+            await asyncio.sleep(0.1)
+            call_order.append("slow")
+
+        async def fast_handler(msg):
+            call_order.append("fast")
+
+        bus.on_outbound(slow_handler)
+        bus.on_outbound(fast_handler)
+
+        from databot.core.bus import OutboundMessage
+
+        await bus.publish_outbound(OutboundMessage(channel="cli", chat_id="t", content="hi"))
+        assert len(call_order) == 2
+        # Both handlers were called (order may vary due to parallelism)
+        assert "slow" in call_order
+        assert "fast" in call_order
+
+    @pytest.mark.asyncio
+    async def test_handler_error_isolation(self):
+        """A failing handler doesn't block others."""
+        bus = MessageBus()
+        results = []
+
+        async def bad_handler(msg):
+            raise RuntimeError("boom")
+
+        async def good_handler(msg):
+            results.append("ok")
+
+        bus.on_outbound(bad_handler)
+        bus.on_outbound(good_handler)
+
+        from databot.core.bus import OutboundMessage
+
+        await bus.publish_outbound(OutboundMessage(channel="cli", chat_id="t", content="hi"))
+        # Good handler still executed despite bad handler raising
+        assert results == ["ok"]

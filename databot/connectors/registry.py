@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import Any
 
 from loguru import logger
@@ -13,6 +15,9 @@ from databot.connectors.base import (
     ConnectorType,
 )
 
+# How long cached health-check results stay valid (seconds).
+_HEALTH_CACHE_TTL: float = 30.0
+
 
 class ConnectorRegistry:
     """Central registry for all connector instances.
@@ -21,12 +26,14 @@ class ConnectorRegistry:
     * Register / deregister connectors
     * Discover connectors from config and entry-points
     * Look up connectors by name or type
-    * Orchestrate connect / disconnect lifecycle
-    * Aggregate health-check results
+    * Orchestrate connect / disconnect lifecycle (in parallel)
+    * Aggregate health-check results (cached with TTL)
     """
 
     def __init__(self) -> None:
         self._connectors: dict[str, BaseConnector] = {}
+        # Health-check cache: name → (status, timestamp)
+        self._health_cache: dict[str, tuple[ConnectorStatus, float]] = {}
 
     # ------------------------------------------------------------------
     # Registration
@@ -64,39 +71,73 @@ class ConnectorRegistry:
         return list(self._connectors.values())
 
     # ------------------------------------------------------------------
-    # Lifecycle
+    # Lifecycle — connectors are (dis)connected in parallel
     # ------------------------------------------------------------------
 
+    async def _connect_one(
+        self, name: str, connector: BaseConnector
+    ) -> tuple[str, ConnectorStatus]:
+        """Connect a single connector and return its health status."""
+        try:
+            await connector.connect()
+            status = await connector.health_check()
+            self._health_cache[name] = (status, time.monotonic())
+            logger.info(f"Connector '{name}' → {status.value}")
+            return name, status
+        except Exception as e:
+            self._health_cache[name] = (ConnectorStatus.UNREACHABLE, time.monotonic())
+            logger.warning(f"Connector '{name}' failed to connect: {e}")
+            return name, ConnectorStatus.UNREACHABLE
+
     async def connect_all(self) -> dict[str, ConnectorStatus]:
-        """Connect all registered connectors and return health map."""
-        results: dict[str, ConnectorStatus] = {}
-        for name, connector in self._connectors.items():
-            try:
-                await connector.connect()
-                status = await connector.health_check()
-                results[name] = status
-                logger.info(f"Connector '{name}' → {status.value}")
-            except Exception as e:
-                results[name] = ConnectorStatus.UNREACHABLE
-                logger.warning(f"Connector '{name}' failed to connect: {e}")
-        return results
+        """Connect all registered connectors *in parallel* and return health map."""
+        if not self._connectors:
+            return {}
+        pairs = await asyncio.gather(
+            *(self._connect_one(n, c) for n, c in self._connectors.items())
+        )
+        return dict(pairs)
 
     async def disconnect_all(self) -> None:
-        """Disconnect all registered connectors."""
-        for name, connector in self._connectors.items():
+        """Disconnect all registered connectors in parallel."""
+
+        async def _safe_disconnect(name: str, connector: BaseConnector) -> None:
             try:
                 await connector.disconnect()
             except Exception as e:
                 logger.warning(f"Connector '{name}' disconnect error: {e}")
 
+        if self._connectors:
+            await asyncio.gather(*(_safe_disconnect(n, c) for n, c in self._connectors.items()))
+        self._health_cache.clear()
+
     async def health_check_all(self) -> dict[str, ConnectorStatus]:
-        """Run health checks on all connectors."""
+        """Run health checks on all connectors (using cache when fresh)."""
+        now = time.monotonic()
         results: dict[str, ConnectorStatus] = {}
+        stale: list[tuple[str, BaseConnector]] = []
+
         for name, connector in self._connectors.items():
-            try:
-                results[name] = await connector.health_check()
-            except Exception:
-                results[name] = ConnectorStatus.UNREACHABLE
+            cached = self._health_cache.get(name)
+            if cached and (now - cached[1]) < _HEALTH_CACHE_TTL:
+                results[name] = cached[0]
+            else:
+                stale.append((name, connector))
+
+        # Refresh stale entries in parallel
+        if stale:
+
+            async def _check(name: str, connector: BaseConnector) -> tuple[str, ConnectorStatus]:
+                try:
+                    status = await connector.health_check()
+                except Exception:
+                    status = ConnectorStatus.UNREACHABLE
+                self._health_cache[name] = (status, time.monotonic())
+                return name, status
+
+            fresh = await asyncio.gather(*(_check(n, c) for n, c in stale))
+            results.update(dict(fresh))
+
         return results
 
     # ------------------------------------------------------------------

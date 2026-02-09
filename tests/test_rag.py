@@ -6,7 +6,6 @@ import pytest
 
 from databot.rag import RAGContext, VectorStore
 
-
 # ---------------------------------------------------------------------------
 # VectorStore (in-memory ChromaDB)
 # ---------------------------------------------------------------------------

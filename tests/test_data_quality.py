@@ -61,9 +61,7 @@ class TestDataQualityTool:
 
     @pytest.mark.asyncio
     async def test_row_count(self, dq_tool):
-        result = await dq_tool.execute(
-            check_type="row_count", connection="test", table="my_table"
-        )
+        result = await dq_tool.execute(check_type="row_count", connection="test", table="my_table")
         assert "Row count" in result
         assert "my_table" in result
 
@@ -76,9 +74,7 @@ class TestDataQualityTool:
 
     @pytest.mark.asyncio
     async def test_null_check_missing_column(self, dq_tool):
-        result = await dq_tool.execute(
-            check_type="null_check", connection="test", table="my_table"
-        )
+        result = await dq_tool.execute(check_type="null_check", connection="test", table="my_table")
         assert "column is required" in result
 
     @pytest.mark.asyncio
@@ -117,7 +113,5 @@ class TestDataQualityTool:
 
     @pytest.mark.asyncio
     async def test_unknown_check_type(self, dq_tool):
-        result = await dq_tool.execute(
-            check_type="unknown", connection="test", table="my_table"
-        )
+        result = await dq_tool.execute(check_type="unknown", connection="test", table="my_table")
         assert "Unknown check type" in result

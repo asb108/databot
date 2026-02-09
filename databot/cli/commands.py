@@ -389,7 +389,10 @@ def _build_components(cfg):
     )
 
     # Storage
-    sessions = SessionManager(data_dir)
+    sessions = SessionManager(
+        data_dir,
+        max_session_messages=cfg.agent.max_session_messages,
+    )
     memory = MemoryManager(data_dir / "memory.db")
 
     # ------------------------------------------------------------------
@@ -1024,6 +1027,31 @@ async def _run_gateway(cfg, port: int):
         )
         asyncio.create_task(discord_channel.start())
         logger.info("Discord channel started")
+
+    # ------------------------------------------------------------------
+    # Startup health check — verify critical components before serving
+    # ------------------------------------------------------------------
+
+    # Check LLM provider reachability (quick test)
+    try:
+        provider.get_default_model()  # at least validates config
+        logger.info("LLM provider configured: " + provider.get_default_model())
+    except Exception as e:
+        logger.warning(f"LLM provider check failed: {e} (gateway will start anyway)")
+
+    # Log connector status
+    if connector_registry:
+        health = await connector_registry.health_check_all()
+        unreachable = [n for n, s in health.items() if s.value == "unreachable"]
+        if unreachable:
+            logger.warning(f"Unreachable connectors at startup: {unreachable}")
+
+    logger.info(
+        f"Startup check complete — "
+        f"tools={len(tools.tool_names)}, "
+        f"skills={len(skill_registry.enabled_skills())}, "
+        f"connectors={len(connector_registry) if connector_registry else 0}"
+    )
 
     # Start services
     agent_task = asyncio.create_task(loop.run())

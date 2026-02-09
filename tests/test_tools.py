@@ -1,15 +1,59 @@
-from __future__ import annotations
 """Tests for databot tools."""
 
+from __future__ import annotations
+
 import asyncio
-import tempfile
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from databot.tools.base import ToolRegistry
+from databot.tools.base import BaseTool, ToolRegistry
 from databot.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from databot.tools.shell import ShellTool
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+class SlowTool(BaseTool):
+    """A tool that sleeps forever, for timeout testing."""
+
+    @property
+    def name(self) -> str:
+        return "slow_tool"
+
+    @property
+    def description(self) -> str:
+        return "Sleeps to test timeout"
+
+    def parameters(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}}
+
+    async def execute(self, **kwargs: Any) -> str:
+        await asyncio.sleep(999)
+        return "done"
+
+
+class FastToolWithCustomTimeout(BaseTool):
+    """A tool that completes quickly but has a short custom timeout."""
+
+    timeout = 5  # custom per-tool timeout
+
+    @property
+    def name(self) -> str:
+        return "fast_tool"
+
+    @property
+    def description(self) -> str:
+        return "Fast tool"
+
+    def parameters(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {}}
+
+    async def execute(self, **kwargs: Any) -> str:
+        return "fast result"
 
 
 @pytest.fixture
@@ -47,6 +91,24 @@ class TestToolRegistry:
         registry = ToolRegistry()
         result = await registry.execute("nonexistent", {})
         assert "Unknown tool" in result
+
+    @pytest.mark.asyncio
+    async def test_tool_execution_timeout(self):
+        """Tools that exceed timeout are killed and return an error."""
+        registry = ToolRegistry(default_timeout=1)  # 1 second timeout
+        registry.register(SlowTool())
+        result = await registry.execute("slow_tool", {})
+        assert "timed out" in result
+
+    @pytest.mark.asyncio
+    async def test_custom_per_tool_timeout(self):
+        """Tools can have a custom per-tool timeout attribute."""
+        registry = ToolRegistry(default_timeout=120)
+        tool = FastToolWithCustomTimeout()
+        registry.register(tool)
+        assert tool.timeout == 5
+        result = await registry.execute("fast_tool", {})
+        assert result == "fast result"
 
 
 # ---------------------------------------------------------------------------
@@ -95,9 +157,7 @@ class TestEditFileTool:
     async def test_edit_file(self, tmp_workspace):
         tool = EditFileTool(allowed_dir=tmp_workspace)
         path = str(tmp_workspace / "test.txt")
-        result = await tool.execute(
-            path=path, old_string="hello world", new_string="goodbye world"
-        )
+        result = await tool.execute(path=path, old_string="hello world", new_string="goodbye world")
         assert "Successfully" in result
         assert "goodbye world" in Path(path).read_text()
 
@@ -105,9 +165,7 @@ class TestEditFileTool:
     async def test_edit_not_found(self, tmp_workspace):
         tool = EditFileTool(allowed_dir=tmp_workspace)
         path = str(tmp_workspace / "test.txt")
-        result = await tool.execute(
-            path=path, old_string="nonexistent", new_string="replacement"
-        )
+        result = await tool.execute(path=path, old_string="nonexistent", new_string="replacement")
         assert "not found" in result
 
 

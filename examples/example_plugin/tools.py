@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 """Example plugin tool for databot.
 
 This demonstrates how to create a custom tool that can be installed

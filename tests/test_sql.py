@@ -68,9 +68,7 @@ class TestReadOnlyEnforcement:
 
     @pytest.mark.asyncio
     async def test_allows_cte_select(self, sql_tool):
-        result = await sql_tool.execute(
-            "WITH cte AS (SELECT 1 as x) SELECT * FROM cte", "test"
-        )
+        result = await sql_tool.execute("WITH cte AS (SELECT 1 as x) SELECT * FROM cte", "test")
         assert "Write operations are not allowed" not in result
 
     @pytest.mark.asyncio
