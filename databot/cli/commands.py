@@ -764,7 +764,7 @@ async def _run_gateway(cfg, port: int):
     )
 
     # FastAPI app
-    api = FastAPI(title="databot", version="0.2.0")
+    api = FastAPI(title="databot", version="0.3.0")
 
     # Add middleware
     api.add_middleware(
@@ -784,7 +784,7 @@ async def _run_gateway(cfg, port: int):
             connector_health = {n: s.value for n, s in raw.items()}
         return {
             "status": "ok",
-            "version": "0.2.0",
+            "version": "0.3.0",
             "connectors": connector_health,
             "skills": [s.name for s in skill_registry.enabled_skills()],
             "ui_enabled": cfg.ui.enabled,

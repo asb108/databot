@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-11
+
+### Added
+- **Skills system** — 8 built-in skills (filesystem, shell, web_search, sql, airflow, lineage, streaming, catalog) that group tools into toggleable bundles
+- **Embedded dashboard UI** — single-page HTML served at `/ui` with Chat, Sessions, Skills, Tools, Connectors, and Status tabs
+- **Onboarding wizard** — `databot init` interactive setup for first-time configuration
+- **Skills API** — `GET/PUT /api/v1/skills` for runtime skill management
+- **Tool execution timeout** — `asyncio.wait_for()` enforces 120s default timeout per tool, preventing hung tools from blocking the agent loop; per-tool override via `BaseTool.timeout`
+- **Session cache LRU eviction** — `OrderedDict`-based LRU with configurable `max_cached_sessions` (default 256); evicted sessions auto-persisted to SQLite
+- **Bounded message queues** — `MessageBus` queues capped at 1000 messages (configurable) with back-pressure; observable via `.inbound_size`/`.outbound_size`
+- **Gateway startup health check** — verifies LLM provider config, logs unreachable connectors, reports tool/skill/connector counts before accepting traffic
+- **Health check TTL caching** — `ConnectorRegistry.health_check_all()` caches results for 30s, refreshes stale entries in parallel
+- 10 new tests for LRU eviction, tool timeout, bounded queues, parallel handlers, parallel connectors, and health-check caching (208 total, 10 skipped)
+
+### Changed
+- **Parallel handler dispatch** — outbound and stream handlers in `MessageBus` now use `asyncio.gather()` instead of sequential execution; a slow/failing handler no longer blocks others
+- **Parallel connector lifecycle** — `connect_all()` and `disconnect_all()` in `ConnectorRegistry` use `asyncio.gather()` for concurrent initialization
+- **SQLite WAL mode** — `SessionStore`, `MemoryManager`, and `CronStore` use `PRAGMA journal_mode=WAL` + `busy_timeout=5000` for better concurrent-read performance
+- **SQLite connection reuse** — thread-local connections eliminate per-operation reconnect overhead across all three SQLite stores
+- **Configurable session message limit** — `agent.max_session_messages` from config now wired through `SessionManager` to `Session` (previously hard-coded to 50)
+
+### Fixed
+- `POST /api/v1/message` — returns structured JSON error instead of raw 500 when API key is missing
+- `POST /api/v1/stream` — yields SSE error event instead of crashing when API key is missing
+- `DELETE /api/v1/sessions/{key}` — removed erroneous `await` on sync `sessions.delete()` method
+- Empty message validation — both chat endpoints now return 400 for empty/whitespace messages
+
 ## [0.2.0] - 2026-02-07
 
 ### Added
