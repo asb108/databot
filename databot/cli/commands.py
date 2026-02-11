@@ -75,10 +75,22 @@ def onboard():
         # --- Provider ---
         console.print("[bold]Choose your LLM provider:[/]")
         console.print("  [cyan]1[/] Anthropic (Claude)")
-        console.print("  [cyan]2[/] OpenAI (GPT-4)")
+        console.print("  [cyan]2[/] OpenAI (GPT-4o)")
         console.print("  [cyan]3[/] DeepSeek")
+        console.print("  [cyan]4[/] Google Gemini")
+        console.print("  [cyan]5[/] Qwen (Alibaba)")
+        console.print("  [cyan]6[/] Mistral")
+        console.print("  [cyan]7[/] Groq (Llama)")
         provider_choice = typer.prompt("Provider", default="1")
-        provider_map = {"1": "anthropic", "2": "openai", "3": "deepseek"}
+        provider_map = {
+            "1": "anthropic",
+            "2": "openai",
+            "3": "deepseek",
+            "4": "gemini",
+            "5": "qwen",
+            "6": "mistral",
+            "7": "groq",
+        }
         provider_name = provider_map.get(provider_choice, "anthropic")
         config.providers.default = provider_name
 
@@ -125,6 +137,16 @@ def onboard():
 
         # --- Channels ---
         console.print("[bold]Chat channels (optional):[/]")
+        if typer.confirm("  Enable Google Chat?", default=False):
+            config.channels.gchat.enabled = True
+            console.print("    Mode: [cyan]1[/] Webhook (send-only)  [cyan]2[/] App (bidirectional)")
+            gchat_mode = typer.prompt("    Mode", default="1")
+            config.channels.gchat.mode = "app" if gchat_mode == "2" else "webhook"
+            webhook_url = typer.prompt(
+                "    Webhook URL (or Enter to set later)", default="", show_default=False
+            )
+            if webhook_url:
+                config.channels.gchat.webhook_url = webhook_url
         if typer.confirm("  Enable Slack?", default=False):
             config.channels.slack.enabled = True
             token = typer.prompt("    Slack bot token", default="", show_default=False)
@@ -370,13 +392,20 @@ def _build_components(cfg):
     bus = MessageBus()
 
     # Provider
+    # Map config provider names to litellm model prefixes.
+    # Most are 1:1, but some differ (e.g., qwen -> dashscope).
+    _LITELLM_PREFIX = {
+        "qwen": "dashscope",
+    }
+
     provider_name = cfg.providers.default
     provider_cfg = getattr(cfg.providers, provider_name, None)
     if provider_cfg is None and provider_name in cfg.providers.custom:
         provider_cfg = cfg.providers.custom[provider_name]
 
+    litellm_prefix = _LITELLM_PREFIX.get(provider_name, provider_name)
     model = (
-        f"{provider_name}/{provider_cfg.model}"
+        f"{litellm_prefix}/{provider_cfg.model}"
         if provider_cfg
         else "anthropic/claude-sonnet-4-5-20250929"
     )

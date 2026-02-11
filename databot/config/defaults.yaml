@@ -12,6 +12,18 @@ providers:
   deepseek:
     api_key: ${DEEPSEEK_API_KEY}
     model: deepseek-chat
+  gemini:
+    api_key: ${GEMINI_API_KEY}
+    model: gemini-2.0-flash
+  qwen:
+    api_key: ${DASHSCOPE_API_KEY}
+    model: qwen-turbo
+  mistral:
+    api_key: ${MISTRAL_API_KEY}
+    model: mistral-large-latest
+  groq:
+    api_key: ${GROQ_API_KEY}
+    model: llama-3.3-70b-versatile
 
 channels:
   gchat:

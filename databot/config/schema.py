@@ -46,6 +46,10 @@ class ProvidersConfig(BaseModel):
     )
     openai: ProviderConfig = Field(default_factory=lambda: ProviderConfig(model="gpt-4o"))
     deepseek: ProviderConfig = Field(default_factory=lambda: ProviderConfig(model="deepseek-chat"))
+    gemini: ProviderConfig = Field(default_factory=lambda: ProviderConfig(model="gemini-2.0-flash"))
+    qwen: ProviderConfig = Field(default_factory=lambda: ProviderConfig(model="qwen-turbo"))
+    mistral: ProviderConfig = Field(default_factory=lambda: ProviderConfig(model="mistral-large-latest"))
+    groq: ProviderConfig = Field(default_factory=lambda: ProviderConfig(model="llama-3.3-70b-versatile"))
     custom: dict[str, ProviderConfig] = Field(default_factory=dict)
 
 
