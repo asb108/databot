@@ -37,6 +37,16 @@ channels:
   discord:
     enabled: false
     bot_token: ${DISCORD_BOT_TOKEN}
+  whatsapp:
+    enabled: false
+    phone_number_id: ""
+    access_token: ${WHATSAPP_ACCESS_TOKEN}
+    verify_token: ${WHATSAPP_VERIFY_TOKEN}
+  telegram:
+    enabled: false
+    bot_token: ${TELEGRAM_BOT_TOKEN}
+    mode: polling
+    webhook_url: ""
 
 tools:
   sql:

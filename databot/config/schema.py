@@ -80,10 +80,27 @@ class DiscordConfig(BaseModel):
     command_prefix: str = "!"
 
 
+class WhatsAppConfig(BaseModel):
+    enabled: bool = False
+    phone_number_id: str = ""
+    access_token: str = ""
+    verify_token: str = ""
+    app_secret: str = ""
+
+
+class TelegramConfig(BaseModel):
+    enabled: bool = False
+    bot_token: str = ""
+    mode: str = "polling"  # "polling" or "webhook"
+    webhook_url: str = ""
+
+
 class ChannelsConfig(BaseModel):
     gchat: GChatConfig = Field(default_factory=GChatConfig)
     slack: SlackConfig = Field(default_factory=SlackConfig)
     discord: DiscordConfig = Field(default_factory=DiscordConfig)
+    whatsapp: WhatsAppConfig = Field(default_factory=WhatsAppConfig)
+    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
 
 
 # ---------------------------------------------------------------------------

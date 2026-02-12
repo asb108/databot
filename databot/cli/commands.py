@@ -157,6 +157,34 @@ def onboard():
             token = typer.prompt("    Discord bot token", default="", show_default=False)
             if token:
                 config.channels.discord.bot_token = token
+        if typer.confirm("  Enable WhatsApp?", default=False):
+            config.channels.whatsapp.enabled = True
+            phone_id = typer.prompt(
+                "    Phone Number ID", default="", show_default=False
+            )
+            if phone_id:
+                config.channels.whatsapp.phone_number_id = phone_id
+            wa_token = typer.prompt(
+                "    Access Token (or Enter to set later)", default="", show_default=False
+            )
+            if wa_token:
+                config.channels.whatsapp.access_token = wa_token
+        if typer.confirm("  Enable Telegram?", default=False):
+            config.channels.telegram.enabled = True
+            tg_token = typer.prompt(
+                "    Bot Token (or Enter to set later)", default="", show_default=False
+            )
+            if tg_token:
+                config.channels.telegram.bot_token = tg_token
+            console.print("    Mode: [cyan]1[/] Polling  [cyan]2[/] Webhook")
+            tg_mode = typer.prompt("    Mode", default="1")
+            config.channels.telegram.mode = "webhook" if tg_mode == "2" else "polling"
+            if tg_mode == "2":
+                tg_wh = typer.prompt(
+                    "    Webhook URL", default="", show_default=False
+                )
+                if tg_wh:
+                    config.channels.telegram.webhook_url = tg_wh
 
     # Save
     config.save(config_path)
@@ -1056,6 +1084,36 @@ async def _run_gateway(cfg, port: int):
         )
         asyncio.create_task(discord_channel.start())
         logger.info("Discord channel started")
+
+    # WhatsApp channel
+    if cfg.channels.whatsapp.enabled:
+        from databot.channels.whatsapp import WhatsAppChannel
+
+        whatsapp_channel = WhatsAppChannel(
+            bus=bus,
+            phone_number_id=cfg.channels.whatsapp.phone_number_id,
+            access_token=cfg.channels.whatsapp.access_token,
+            verify_token=cfg.channels.whatsapp.verify_token,
+            app_secret=cfg.channels.whatsapp.app_secret,
+        )
+        await whatsapp_channel.start()
+        api.include_router(whatsapp_channel.get_fastapi_routes())
+        logger.info("WhatsApp channel started")
+
+    # Telegram channel
+    if cfg.channels.telegram.enabled:
+        from databot.channels.telegram import TelegramChannel
+
+        telegram_channel = TelegramChannel(
+            bus=bus,
+            bot_token=cfg.channels.telegram.bot_token,
+            mode=cfg.channels.telegram.mode,
+            webhook_url=cfg.channels.telegram.webhook_url,
+        )
+        await telegram_channel.start()
+        if cfg.channels.telegram.mode == "webhook":
+            api.include_router(telegram_channel.get_fastapi_routes())
+        logger.info(f"Telegram channel started (mode={cfg.channels.telegram.mode})")
 
     # ------------------------------------------------------------------
     # Startup health check — verify critical components before serving
