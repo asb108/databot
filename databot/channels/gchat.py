@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
+from fastapi import APIRouter, Request
 from loguru import logger
 
 from databot.channels.base import BaseChannel
@@ -70,8 +71,6 @@ class GChatChannel(BaseChannel):
 
     def get_fastapi_routes(self):
         """Return FastAPI routes for Google Chat App mode (bidirectional)."""
-        from fastapi import APIRouter, Request
-
         router = APIRouter()
 
         @router.post("/webhooks/gchat")

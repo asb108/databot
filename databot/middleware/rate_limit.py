@@ -6,7 +6,8 @@ import time
 from collections import defaultdict
 from typing import Callable
 
-from fastapi import HTTPException, Request, Response
+from fastapi import Request, Response
+from fastapi.responses import JSONResponse
 from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -41,9 +42,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             logger.warning(
                 f"Rate limit exceeded for {client_ip}: {len(timestamps)}/{self._rpm} rpm"
             )
-            raise HTTPException(
+            return JSONResponse(
                 status_code=429,
-                detail=f"Rate limit exceeded. Maximum {self._rpm} requests per minute.",
+                content={
+                    "detail": f"Rate limit exceeded. Maximum {self._rpm} requests per minute."
+                },
             )
 
         timestamps.append(now)
