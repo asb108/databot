@@ -32,12 +32,19 @@ class _FakeRegistry:
         return []
 
 
-def _build(tmp_path: Path, *, connector_registry=None, rate_limit_rpm=0):
-    """Construct a minimal-but-real gateway app for testing."""
+def _build(tmp_path: Path, *, connector_registry=None, rate_limit_rpm=0, configure_cfg=None):
+    """Construct a minimal-but-real gateway app for testing.
+
+    ``configure_cfg`` is an optional callback ``(cfg) -> None`` to mutate the
+    config after the test defaults are applied (e.g. inject a secret to assert
+    masking).
+    """
     cfg = DatabotConfig()
-    cfg.gateway.api_keys = []              # open mode -> auth middleware no-ops
+    cfg.gateway.api_keys = []  # open mode -> auth middleware no-ops
     cfg.gateway.rate_limit_rpm = rate_limit_rpm  # 0 -> rate limiter disabled
-    cfg.ui.enabled = False                 # skip the /ui mount
+    cfg.ui.enabled = False  # skip the /ui mount
+    if configure_cfg is not None:
+        configure_cfg(cfg)
 
     bus = MessageBus()
     tools = ToolRegistry()
@@ -170,12 +177,26 @@ def test_get_config(client):
     # in that region is covered — guards the app-factory extraction.
     r = client.get("/api/v1/config")
     assert r.status_code == 200
-    assert isinstance(r.json(), dict)
+    body = r.json()
+    assert "providers" in body
+    assert "gateway" in body
+    assert "channels" in body
 
 
-def test_get_channels_config_masks_secrets(client):
-    # Drives the `_mask` helper path (nested in get_channels_config). Must not
-    # raise NameError after the verbatim move, and must not echo raw secrets.
-    r = client.get("/api/v1/config/channels")
+def test_get_channels_config_masks_secrets(tmp_path):
+    # Inject a real secret and prove the nested `_mask` helper actually ran:
+    # the raw token must be absent and the masked form (first4****last4) present.
+    import json
+
+    secret = "xoxb-realtoken-12345678"
+
+    def _inject(cfg):
+        cfg.channels.slack.bot_token = secret
+
+    app = _build(tmp_path, configure_cfg=_inject)
+    r = TestClient(app).get("/api/v1/config/channels")
     assert r.status_code == 200
-    assert isinstance(r.json(), dict)
+    body = r.json()
+    assert "channels" in body and "slack" in body["channels"]
+    assert secret not in json.dumps(body)  # raw secret never leaks
+    assert body["channels"]["slack"]["bot_token"] == "xoxb****5678"
