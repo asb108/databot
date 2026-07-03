@@ -97,3 +97,40 @@ def test_readyz_503_when_connector_unreachable(tmp_path):
     body = r.json()
     assert body["status"] == "not_ready"
     assert body["connectors"]["warehouse"] == "unreachable"
+
+
+def test_metrics_returns_exposition_payload(client):
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    # metrics configured disabled -> graceful placeholder, no prometheus_client needed
+    assert b"databot metrics disabled" in r.content
+
+
+def test_usage(client):
+    r = client.get("/api/v1/usage")
+    assert r.status_code == 200
+    body = r.json()
+    assert "global" in body
+    assert "sessions" in body
+    assert "session_budget_usd" in body
+
+
+def test_audit(client):
+    r = client.get("/api/v1/audit")
+    assert r.status_code == 200
+    body = r.json()
+    assert "enabled" in body
+    assert "entries" in body
+    assert isinstance(body["entries"], list)
+
+
+def test_monitors_empty(client):
+    r = client.get("/api/v1/monitors")
+    assert r.status_code == 200
+    assert r.json() == {"monitors": []}
+
+
+def test_queries_empty_without_saved_query_tool(client):
+    r = client.get("/api/v1/queries")
+    assert r.status_code == 200
+    assert r.json() == {"queries": []}
