@@ -79,3 +79,21 @@ def test_livez(client):
     r = client.get("/livez")
     assert r.status_code == 200
     assert r.json() == {"status": "alive"}
+
+
+def test_readyz_healthy_when_no_connectors(client):
+    r = client.get("/readyz")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ready"
+
+
+def test_readyz_503_when_connector_unreachable(tmp_path):
+    from databot.connectors.base import ConnectorStatus
+
+    reg = _FakeRegistry(health={"warehouse": ConnectorStatus.UNREACHABLE})
+    client = TestClient(_build(tmp_path, connector_registry=reg))
+    r = client.get("/readyz")
+    assert r.status_code == 503
+    body = r.json()
+    assert body["status"] == "not_ready"
+    assert body["connectors"]["warehouse"] == "unreachable"
