@@ -38,7 +38,9 @@ def build_api(
 
     ``channels`` is a mutable name->channel dict shared with ``gateway()``; its
     webhook routers are registered here, and the PUT /api/v1/config route reads
-    it (as ``_channels``) to start/stop channels at runtime.
+    it (as ``_channels``) to start/stop channels at runtime. Pass ``None`` (the
+    default) for an app with no channel webhook routes; the runtime start/stop
+    logic in PUT /api/v1/config then becomes a no-op.
     """
     api = FastAPI(title="databot", version="0.3.0")
 
@@ -51,6 +53,8 @@ def build_api(
     api.add_middleware(APIKeyAuthMiddleware, api_keys=cfg.gateway.api_keys)
     api.add_middleware(RateLimitMiddleware, requests_per_minute=cfg.gateway.rate_limit_rpm)
 
+    # Shared reference: the route closures below capture this handle, so runtime
+    # mutations by gateway() (e.g. adding slack/discord) are visible to them.
     _channels = channels if channels is not None else {}
 
     @api.get("/health")

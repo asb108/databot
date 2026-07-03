@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from databot.audit import configure_audit_log
-from databot.cli.api import build_api  # this module is created in Task 2
+from databot.cli.api import build_api
 from databot.config.schema import DatabotConfig
 from databot.core.bus import MessageBus
 from databot.core.cost import UsageTracker
@@ -30,9 +30,6 @@ class _FakeRegistry:
 
     def list_all(self):
         return []
-
-    def __len__(self):
-        return 0
 
 
 def _build(tmp_path: Path, *, connector_registry=None, rate_limit_rpm=0):
