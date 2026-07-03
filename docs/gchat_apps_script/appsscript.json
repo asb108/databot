@@ -1,0 +1,9 @@
+{
+  "timeZone": "Asia/Singapore",
+  "dependencies": {},
+  "exceptionLogging": "STACKDRIVER",
+  "runtimeVersion": "V8",
+  "chat": {
+    "addToSpaceFallbackMessage": "Thanks for adding me! I'm databot — ask me anything about your data platform."
+  }
+}

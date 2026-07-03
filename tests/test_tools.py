@@ -206,3 +206,40 @@ class TestShellTool:
         tool = ShellTool(working_dir=str(tmp_workspace), timeout=1)
         result = await tool.execute(command="sleep 10")
         assert "timed out" in result
+
+    @pytest.mark.asyncio
+    async def test_allowlist_blocks_chaining(self, tmp_workspace):
+        # Allowlisted base command must not be a vector for chaining into an
+        # arbitrary one via shell metacharacters.
+        tool = ShellTool(
+            working_dir=str(tmp_workspace),
+            timeout=10,
+            allowed_commands=["echo"],
+        )
+        for payload in ["echo hi; rm -rf x", "echo hi && id", "echo $(id)", "echo hi | cat"]:
+            result = await tool.execute(command=payload)
+            assert "not permitted" in result, payload
+
+    @pytest.mark.asyncio
+    async def test_allowlist_runs_via_argv(self, tmp_workspace):
+        # A clean allowlisted command still works (executed without a shell).
+        tool = ShellTool(
+            working_dir=str(tmp_workspace),
+            timeout=10,
+            allowed_commands=["echo"],
+        )
+        result = await tool.execute(command="echo hello world")
+        assert "hello world" in result
+        assert "exit code: 0" in result
+
+    @pytest.mark.asyncio
+    async def test_allowlist_basename_match(self, tmp_workspace):
+        # An absolute path whose basename is allowlisted is accepted; a
+        # non-allowlisted command is rejected.
+        tool = ShellTool(
+            working_dir=str(tmp_workspace),
+            timeout=10,
+            allowed_commands=["echo"],
+        )
+        rejected = await tool.execute(command="cat /etc/passwd")
+        assert "not in the allowed list" in rejected

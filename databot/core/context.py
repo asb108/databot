@@ -52,13 +52,27 @@ class ContextBuilder:
         channel: str = "cli",
         chat_id: str = "direct",
         media: list[dict] | None = None,
+        summary: str = "",
     ) -> list[dict[str, Any]]:
-        """Build the full message list for the LLM."""
+        """Build the full message list for the LLM.
+
+        ``summary`` is the running compaction summary of earlier turns; when
+        present it is added as a second system message (providers merge multiple
+        system messages), preserving user/assistant alternation in ``history``.
+        """
         messages: list[dict[str, Any]] = []
 
         # System prompt with memory context
         system = self._build_system_prompt()
         messages.append({"role": "system", "content": system})
+
+        if summary:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": f"## Summary of earlier conversation\n{summary}",
+                }
+            )
 
         # Conversation history
         for msg in history:

@@ -60,6 +60,7 @@ class TestGChatChannelModes:
 
         bus = MessageBus()
         ch = GChatChannel(bus=bus, mode="webhook", webhook_url="")
+        ch._running = True
         ch.send = AsyncMock()
 
         # Message for different channel — should not trigger send
@@ -90,6 +91,7 @@ class TestGChatChannelModes:
 
         bus = MessageBus()
         ch = GChatChannel(bus=bus, mode="app")
+        ch._running = True
 
         app = FastAPI()
         app.include_router(ch.get_fastapi_routes())
@@ -115,6 +117,7 @@ class TestGChatChannelModes:
 
         bus = MessageBus()
         ch = GChatChannel(bus=bus, mode="app")
+        ch._running = True
 
         app = FastAPI()
         app.include_router(ch.get_fastapi_routes())

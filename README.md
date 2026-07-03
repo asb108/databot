@@ -22,6 +22,11 @@ managing the full big-data stack.
 - **Plugin System**: Extend with custom tools, channels, and providers via Python entry points
 
 ### Data Tools
+- **NL-to-SQL**: Generate read-only SQL from plain-English questions, grounded in the connection's real schema, with read-only validation before execution
+- **Schema Introspection**: List databases/tables and describe columns so the agent grounds answers in the real schema
+- **Data Profiling**: Per-column null rate, distinct count, and min/max with automatic data-quality flagging
+- **Visualization**: Render results as text bar/line/sparkline charts that display in any chat or terminal
+- **dbt Integration**: Inspect dbt models, column-level metadata, lineage, tests, and sources from `manifest.json` (no dbt install needed)
 - **SQL Queries**: Execute read-only queries against MySQL, Trino, Presto, ClickHouse, StarRocks, Hive, and more
 - **Airflow Integration**: Check DAG status, view task logs, trigger runs via REST API
 - **Data Quality**: Row counts, null checks, freshness, source-target comparison with SQL injection protection
@@ -40,6 +45,12 @@ managing the full big-data stack.
 - **RAG (Retrieval-Augmented Generation)**: ChromaDB-backed vector store for schema-aware, context-grounded answers
 - **MCP Server**: Expose tools and connectors via Model Context Protocol for Claude Desktop, Cursor, and VS Code
 
+### Context & Cost Intelligence
+- **Token Budgeting**: Requests are automatically trimmed to fit the model's context window — never an over-limit failure, system prompt and tool-call pairing preserved
+- **Conversation Compaction**: Old turns are summarized into a running brief instead of being silently dropped, so long sessions keep their context
+- **Prompt Caching**: Anthropic `cache_control` breakpoints on the stable system + tool prefix cut multi-turn cost and latency
+- **Cost Tracking & Budgets**: Per-session and global token/dollar accounting with an optional per-session spend cap (`GET /api/v1/usage`)
+
 ### Channels & Gateway
 - **Google Chat**: Webhook (send-only) and App (bidirectional) modes
 - **Slack**: Bot with slash commands and thread-aware conversations
@@ -48,8 +59,9 @@ managing the full big-data stack.
 - **Scheduled Tasks**: Cron-based proactive monitoring with channel alerts
 
 ### Operations
-- **Observability**: OpenTelemetry tracing for tool calls and LLM interactions
-- **Security**: Read-only SQL, workspace sandboxing, command allowlist, API key auth, rate limiting
+- **Observability**: OpenTelemetry tracing **plus Prometheus metrics** (`/metrics`) for messages, tool calls, LLM tokens/cost, and latency
+- **Health Probes**: Kubernetes-style `/livez` (liveness) and `/readyz` (readiness — 503 when a connector is unreachable)
+- **Security**: Read-only SQL with strict identifier validation (injection-safe), workspace sandboxing, allowlisted shell run via `argv` (no shell-metacharacter bypass), API key auth, rate limiting
 - **Shell & Filesystem**: Execute commands, read/write files with workspace sandboxing
 
 ## Quick Start
@@ -150,8 +162,16 @@ databot/
 | Tool | Description |
 |------|-------------|
 | `sql` | Execute SQL queries against configured databases (connector-backed) |
+| `text_to_sql` | Generate read-only SQL from natural language, grounded in the real schema (optional execute) |
+| `describe_schema` | List databases/tables and describe table columns |
+| `chart` | Render data as text bar/line/sparkline charts (any chat or terminal) |
+| `dbt` | Inspect dbt models, lineage, tests, and sources from `manifest.json` |
 | `airflow` | Check DAG status, view logs, trigger runs (connector-backed) |
 | `data_quality` | Row counts, null checks, freshness, source-target comparison |
+| `profile_data` | Per-column null rate, distinct count, min/max with auto-discovery and data-quality flags |
+| `export_query` | Run a query and write results to CSV/JSON in the workspace |
+| `saved_query` | Save/list/run/delete named, parameterized queries (safe value substitution) |
+| `monitor` | Create scheduled threshold checks that alert a channel on breach (gateway) |
 | `lineage` | Upstream/downstream dependencies via graphs or Marquez API |
 | `spark` | Submit batch jobs, manage sessions via Livy/YARN/K8s connectors |
 | `kafka` | Topics, consumer groups, Schema Registry, Kafka Connect |
@@ -268,10 +288,11 @@ See the `k8s/` directory for example Kubernetes deployment manifests.
 
 - **Read-only SQL by default**: Write operations blocked unless explicitly enabled
 - **Workspace sandboxing**: Filesystem and shell restricted to workspace directory
-- **Command allowlist**: Only whitelisted shell commands can execute
+- **Command allowlist**: Allowlisted shell commands run via `argv` (no shell) so metacharacters (`;`, `|`, `&&`, `$()`) cannot chain into an unlisted command
 - **API Key Authentication**: Gateway endpoints protected with Bearer / X-API-Key auth
 - **Rate Limiting**: Configurable per-IP request rate limiting with sliding window
-- **SQL Injection Protection**: Identifier validation on data quality checks
+- **SQL Injection Protection**: Centralized strict identifier validation/quoting across the SQL connector, data-quality, and profiling tools — table/schema/column names from the LLM can never inject SQL
+
 ## Plugins
 
 Databot supports plugins via Python entry points. Third-party packages can add custom tools, channels, and LLM providers.

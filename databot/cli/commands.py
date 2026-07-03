@@ -139,7 +139,9 @@ def onboard():
         console.print("[bold]Chat channels (optional):[/]")
         if typer.confirm("  Enable Google Chat?", default=False):
             config.channels.gchat.enabled = True
-            console.print("    Mode: [cyan]1[/] Webhook (send-only)  [cyan]2[/] App (bidirectional)")
+            console.print(
+                "    Mode: [cyan]1[/] Webhook (send-only)  [cyan]2[/] App (bidirectional)"
+            )
             gchat_mode = typer.prompt("    Mode", default="1")
             config.channels.gchat.mode = "app" if gchat_mode == "2" else "webhook"
             webhook_url = typer.prompt(
@@ -159,9 +161,7 @@ def onboard():
                 config.channels.discord.bot_token = token
         if typer.confirm("  Enable WhatsApp?", default=False):
             config.channels.whatsapp.enabled = True
-            phone_id = typer.prompt(
-                "    Phone Number ID", default="", show_default=False
-            )
+            phone_id = typer.prompt("    Phone Number ID", default="", show_default=False)
             if phone_id:
                 config.channels.whatsapp.phone_number_id = phone_id
             wa_token = typer.prompt(
@@ -180,9 +180,7 @@ def onboard():
             tg_mode = typer.prompt("    Mode", default="1")
             config.channels.telegram.mode = "webhook" if tg_mode == "2" else "polling"
             if tg_mode == "2":
-                tg_wh = typer.prompt(
-                    "    Webhook URL", default="", show_default=False
-                )
+                tg_wh = typer.prompt("    Webhook URL", default="", show_default=False)
                 if tg_wh:
                     config.channels.telegram.webhook_url = tg_wh
 
@@ -422,7 +420,7 @@ def _build_components(cfg):
     # Provider
     # Map config provider names to litellm model prefixes.
     # Most are 1:1, but some differ (e.g., qwen -> dashscope).
-    _LITELLM_PREFIX = {
+    litellm_prefixes = {
         "qwen": "dashscope",
     }
 
@@ -431,7 +429,7 @@ def _build_components(cfg):
     if provider_cfg is None and provider_name in cfg.providers.custom:
         provider_cfg = cfg.providers.custom[provider_name]
 
-    litellm_prefix = _LITELLM_PREFIX.get(provider_name, provider_name)
+    litellm_prefix = litellm_prefixes.get(provider_name, provider_name)
     model = (
         f"{litellm_prefix}/{provider_cfg.model}"
         if provider_cfg
@@ -443,7 +441,26 @@ def _build_components(cfg):
         api_base=provider_cfg.api_base if provider_cfg else None,
         retry_attempts=cfg.agent.retry_attempts,
         retry_delay=cfg.agent.retry_delay_seconds,
+        enable_prompt_caching=cfg.agent.prompt_caching,
     )
+
+    # ------------------------------------------------------------------
+    # Context & cost intelligence: usage/cost tracker + conversation compactor
+    # ------------------------------------------------------------------
+    from databot.core.cost import UsageTracker
+
+    usage_tracker = UsageTracker(session_budget_usd=cfg.agent.session_cost_budget_usd)
+
+    compactor = None
+    if cfg.agent.compaction_enabled:
+        from databot.core.compaction import ConversationCompactor
+
+        compactor = ConversationCompactor(
+            provider=provider,
+            model=model,
+            trigger_tokens=cfg.agent.compaction_trigger_tokens,
+            keep_recent_messages=cfg.agent.compaction_keep_recent_messages,
+        )
 
     # Storage
     sessions = SessionManager(
@@ -490,6 +507,7 @@ def _build_components(cfg):
                 store=store,
                 max_context_docs=cfg.rag.max_context_docs,
                 max_context_chars=cfg.rag.max_context_chars,
+                max_distance=cfg.rag.max_distance,
             )
         except ImportError:
             console.print("[yellow]RAG enabled but chromadb not installed. Skipping.[/]")
@@ -505,10 +523,31 @@ def _build_components(cfg):
     # Tools
     # ------------------------------------------------------------------
     tools = ToolRegistry()
-    _register_tools(tools, cfg, workspace, connector_registry, skill_registry)
+    _register_tools(
+        tools,
+        cfg,
+        workspace,
+        connector_registry,
+        skill_registry,
+        provider=provider,
+        usage_tracker=usage_tracker,
+    )
 
     # ------------------------------------------------------------------
     # Multi-agent delegator
+    # ------------------------------------------------------------------
+    # Slash command handler (deterministic chat ops, no LLM)
+    # ------------------------------------------------------------------
+    from databot.core.slash import SlashCommandHandler
+
+    slash_handler = SlashCommandHandler(
+        sessions=sessions,
+        tools=tools,
+        usage_tracker=usage_tracker,
+        skill_registry=skill_registry,
+        connector_registry=connector_registry,
+    )
+
     # ------------------------------------------------------------------
     delegator = None
     if cfg.multi_agent.enabled:
@@ -518,6 +557,11 @@ def _build_components(cfg):
             provider=provider,
             tools=tools,
             model=model,
+            usage_tracker=usage_tracker,
+            context_budget_ratio=cfg.agent.context_budget_ratio,
+            sessions=sessions,
+            compactor=compactor,
+            slash_handler=slash_handler,
         )
 
     return (
@@ -532,10 +576,21 @@ def _build_components(cfg):
         tracer,
         delegator,
         skill_registry,
+        usage_tracker,
+        compactor,
+        slash_handler,
     )
 
 
-def _register_tools(tools, cfg, workspace: Path, connector_registry=None, skill_registry=None):
+def _register_tools(
+    tools,
+    cfg,
+    workspace: Path,
+    connector_registry=None,
+    skill_registry=None,
+    provider=None,
+    usage_tracker=None,
+):
     """Register tools based on config and enabled skills."""
     from databot.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
     from databot.tools.shell import ShellTool
@@ -573,6 +628,23 @@ def _register_tools(tools, cfg, workspace: Path, connector_registry=None, skill_
             )
         )
 
+    # Visualization
+    if _should_register("chart"):
+        from databot.tools.chart import ChartTool
+
+        tools.register(ChartTool())
+
+    # dbt metadata
+    if cfg.tools.dbt.enabled and _should_register("dbt"):
+        from databot.tools.dbt import DbtTool
+
+        tools.register(
+            DbtTool(
+                manifest_path=cfg.tools.dbt.manifest_path,
+                project_dir=cfg.tools.dbt.project_dir,
+            )
+        )
+
     # Web tools
     if _should_register("web_fetch"):
         tools.register(WebFetchTool(max_length=cfg.tools.web.max_fetch_length))
@@ -603,15 +675,73 @@ def _register_tools(tools, cfg, workspace: Path, connector_registry=None, skill_
 
             tools.register(DataQualityTool(sql_tool=sql_tool))
 
+        # Data profiling tool (depends on SQL)
+        if _should_register("profile_data"):
+            from databot.tools.profiling import DataProfileTool
+
+            tools.register(DataProfileTool(sql_tool=sql_tool))
+
+        # Schema introspection tool
+        if _should_register("describe_schema"):
+            from databot.tools.schema_tool import SchemaTool
+
+            tools.register(SchemaTool(connector_registry=connector_registry, sql_tool=sql_tool))
+
+        # Export tool (write query results to CSV/JSON in the workspace)
+        if _should_register("export_query"):
+            from databot.tools.export import ExportTool
+
+            tools.register(
+                ExportTool(
+                    sql_tool=sql_tool,
+                    connector_registry=connector_registry,
+                    workspace=workspace,
+                )
+            )
+
+        # Saved query library
+        if _should_register("saved_query"):
+            from databot.queries.store import QueryStore
+            from databot.tools.saved_query import SavedQueryTool
+
+            query_store = QueryStore(_get_data_dir() / "saved_queries.db")
+            tools.register(SavedQueryTool(store=query_store, sql_tool=sql_tool))
+
+        # Natural-language-to-SQL tool (needs the LLM provider)
+        if provider is not None and _should_register("text_to_sql"):
+            from databot.tools.nl_to_sql import NLToSQLTool
+
+            tools.register(
+                NLToSQLTool(
+                    provider=provider,
+                    sql_tool=sql_tool,
+                    connector_registry=connector_registry,
+                    usage_tracker=usage_tracker,
+                )
+            )
+
     # Airflow tool (optionally connector-backed)
-    if cfg.tools.airflow.base_url and _should_register("airflow"):
+    # Register if explicit tool config exists OR if an "airflow" connector is in the registry
+    airflow_base = cfg.tools.airflow.base_url
+    airflow_user = cfg.tools.airflow.username
+    airflow_pass = cfg.tools.airflow.password
+
+    # Fall back to connector config if tool config is empty
+    if not airflow_base and connector_registry:
+        af_connector_cfg = cfg.connectors.instances.get("airflow")
+        if af_connector_cfg and af_connector_cfg.type == "rest_api":
+            airflow_base = af_connector_cfg.base_url
+            airflow_user = airflow_user or af_connector_cfg.username
+            airflow_pass = airflow_pass or af_connector_cfg.password
+
+    if airflow_base and _should_register("airflow"):
         from databot.tools.airflow import AirflowTool
 
         tools.register(
             AirflowTool(
-                base_url=cfg.tools.airflow.base_url,
-                username=cfg.tools.airflow.username,
-                password=cfg.tools.airflow.password,
+                base_url=airflow_base,
+                username=airflow_user,
+                password=airflow_pass,
                 connector_registry=connector_registry,
             )
         )
@@ -626,6 +756,18 @@ def _register_tools(tools, cfg, workspace: Path, connector_registry=None, skill_
             LineageTool(
                 graph_path=cfg.tools.lineage.graph_path,
                 marquez_url=cfg.tools.lineage.marquez_url,
+            )
+        )
+
+    # Ticket support tool
+    if _should_register("support_ticket"):
+        from databot.tools.ticket import TicketTool
+
+        tools.register(
+            TicketTool(
+                api_url=cfg.tools.ticket.api_url,
+                api_token=cfg.tools.ticket.api_token,
+                system_type=cfg.tools.ticket.system_type,
             )
         )
 
@@ -670,6 +812,9 @@ async def _process_single(cfg, message: str) -> str:
         tracer,
         delegator,
         _skill_registry,
+        usage_tracker,
+        compactor,
+        slash_handler,
     ) = _build_components(cfg)
 
     # Connect connectors
@@ -681,7 +826,9 @@ async def _process_single(cfg, message: str) -> str:
         extra_context = ""
         if rag_context:
             extra_context = rag_context.enrich_prompt(message)
-        result = await delegator.handle(message, extra_context=extra_context)
+        result = await delegator.handle(
+            message, extra_context=extra_context, session_key="cli:direct"
+        )
         if connector_registry:
             await connector_registry.disconnect_all()
         return result
@@ -697,6 +844,10 @@ async def _process_single(cfg, message: str) -> str:
         max_iterations=cfg.agent.max_iterations,
         approval_required_tools=cfg.agent.tool_approval_required,
         rag_context=rag_context,
+        usage_tracker=usage_tracker,
+        compactor=compactor,
+        context_budget_ratio=cfg.agent.context_budget_ratio,
+        slash_handler=slash_handler,
     )
 
     result = await loop.process_direct(message)
@@ -726,6 +877,9 @@ async def _run_interactive(cfg):
         tracer,
         delegator,
         _skill_registry,
+        usage_tracker,
+        compactor,
+        slash_handler,
     ) = _build_components(cfg)
 
     if connector_registry:
@@ -742,6 +896,10 @@ async def _run_interactive(cfg):
         max_iterations=cfg.agent.max_iterations,
         approval_required_tools=cfg.agent.tool_approval_required,
         rag_context=rag_context,
+        usage_tracker=usage_tracker,
+        compactor=compactor,
+        context_budget_ratio=cfg.agent.context_budget_ratio,
+        slash_handler=slash_handler,
     )
 
     cli = CLIChannel(bus)
@@ -784,6 +942,9 @@ async def _run_gateway(cfg, port: int):
         tracer,
         delegator,
         skill_registry,
+        usage_tracker,
+        compactor,
+        slash_handler,
     ) = _build_components(cfg)
 
     data_dir = _get_data_dir()
@@ -806,6 +967,15 @@ async def _run_gateway(cfg, port: int):
             except Exception as e:
                 logger.warning(f"Failed to load cron job '{job.name}': {e}")
 
+    # Monitor service (scheduled data checks with channel alerting)
+    from databot.monitors.service import MonitorService
+
+    monitor_service = MonitorService(data_dir, bus, sql_tool=tools.get("sql"))
+    if skill_registry is None or "monitor" in skill_registry.enabled_tool_names():
+        from databot.tools.monitor import MonitorTool
+
+        tools.register(MonitorTool(service=monitor_service))
+
     # Agent loop
     loop = AgentLoop(
         bus=bus,
@@ -818,7 +988,21 @@ async def _run_gateway(cfg, port: int):
         max_iterations=cfg.agent.max_iterations,
         approval_required_tools=cfg.agent.tool_approval_required,
         rag_context=rag_context,
+        usage_tracker=usage_tracker,
+        compactor=compactor,
+        context_budget_ratio=cfg.agent.context_budget_ratio,
+        slash_handler=slash_handler,
     )
+
+    # Prometheus metrics (no-op if prometheus_client is not installed)
+    from databot.observability.metrics import configure_metrics
+
+    metrics = configure_metrics(enabled=cfg.observability.metrics_enabled)
+
+    # Audit log (append-only record of tool executions)
+    from databot.audit import configure_audit_log
+
+    audit_log = configure_audit_log(data_dir / "audit.db" if cfg.security.audit_log else None)
 
     # FastAPI app
     api = FastAPI(title="databot", version="0.3.0")
@@ -847,6 +1031,38 @@ async def _run_gateway(cfg, port: int):
             "ui_enabled": cfg.ui.enabled,
         }
 
+    @api.get("/livez")
+    async def livez():
+        """Liveness probe — the process is up and serving."""
+        return {"status": "alive"}
+
+    @api.get("/readyz")
+    async def readyz():
+        """Readiness probe — dependencies (connectors) are reachable.
+
+        Returns 503 when any configured connector is unreachable so an
+        orchestrator can hold traffic until the bot can actually do work.
+        """
+        from fastapi.responses import JSONResponse
+
+        from databot.connectors.base import ConnectorStatus
+
+        connector_health: dict[str, str] = {}
+        ready = True
+        if connector_registry:
+            raw = await connector_registry.health_check_all()
+            connector_health = {n: s.value for n, s in raw.items()}
+            ready = all(s != ConnectorStatus.UNREACHABLE for s in raw.values())
+        body = {"status": "ready" if ready else "not_ready", "connectors": connector_health}
+        return JSONResponse(body, status_code=200 if ready else 503)
+
+    @api.get("/metrics")
+    async def get_prometheus_metrics():
+        """Prometheus exposition endpoint."""
+        from fastapi.responses import Response
+
+        return Response(content=metrics.render(), media_type=metrics.content_type)
+
     @api.post("/api/v1/message")
     async def post_message(request: dict):
         from fastapi.responses import JSONResponse
@@ -873,6 +1089,7 @@ async def _run_gateway(cfg, port: int):
                 result = await delegator.handle_with_metadata(
                     msg.content,
                     extra_context=extra_context,
+                    session_key=msg.session_key,
                 )
                 return {
                     "response": result["response"],
@@ -949,19 +1166,47 @@ async def _run_gateway(cfg, port: int):
 
     @api.get("/api/v1/connectors")
     async def list_connectors():
-        """List all registered connectors and their status."""
-        if not connector_registry:
-            return {"connectors": []}
+        """List all registered connectors and their status, plus configured ones."""
         result = []
-        for conn in connector_registry.list_all():
-            result.append(
-                {
-                    "name": conn.name,
-                    "type": conn.connector_type.value,
-                    "connected": conn.is_connected,
-                    "capabilities": conn.capabilities(),
-                }
-            )
+        registered_names = set()
+
+        # Active/registered connectors
+        if connector_registry:
+            for conn in connector_registry.list_all():
+                registered_names.add(conn.name)
+                health = await conn.health_check()
+                result.append(
+                    {
+                        "name": conn.name,
+                        "type": conn.connector_type.value,
+                        "connected": conn.is_connected,
+                        "status": health.value,
+                        "capabilities": conn.capabilities(),
+                        "source": "active",
+                    }
+                )
+
+        # Config-defined connectors (not yet registered)
+        if cfg.connectors and cfg.connectors.instances:
+            for name, conn_cfg in cfg.connectors.instances.items():
+                if name not in registered_names:
+                    result.append(
+                        {
+                            "name": name,
+                            "type": conn_cfg.type,
+                            "connected": False,
+                            "status": "not_configured",
+                            "capabilities": [],
+                            "source": "config",
+                            "config_summary": {
+                                "driver": conn_cfg.driver or None,
+                                "host": conn_cfg.host or None,
+                                "database": conn_cfg.database or None,
+                                "read_only": conn_cfg.read_only,
+                            },
+                        }
+                    )
+
         return {"connectors": result}
 
     @api.get("/api/v1/sessions")
@@ -1032,6 +1277,337 @@ async def _run_gateway(cfg, port: int):
         return {"name": name, "enabled": skill_registry.is_enabled(name)}
 
     # ------------------------------------------------------------------
+    # Configuration API
+    # ------------------------------------------------------------------
+    @api.get("/api/v1/config")
+    async def get_config():
+        """Return current configuration (safe subset)."""
+        return {
+            "providers": {
+                "default": cfg.providers.default,
+                "available": list(
+                    {
+                        "anthropic": cfg.providers.anthropic,
+                        "openai": cfg.providers.openai,
+                        "deepseek": cfg.providers.deepseek,
+                        "gemini": cfg.providers.gemini,
+                        "qwen": cfg.providers.qwen,
+                        "mistral": cfg.providers.mistral,
+                        "groq": cfg.providers.groq,
+                    }.keys()
+                ),
+                "models": {
+                    "anthropic": cfg.providers.anthropic.model,
+                    "openai": cfg.providers.openai.model,
+                    "deepseek": cfg.providers.deepseek.model,
+                    "gemini": cfg.providers.gemini.model,
+                    "qwen": cfg.providers.qwen.model,
+                    "mistral": cfg.providers.mistral.model,
+                    "groq": cfg.providers.groq.model,
+                },
+            },
+            "agent": {
+                "max_iterations": cfg.agent.max_iterations,
+                "max_session_messages": cfg.agent.max_session_messages,
+                "system_prompt": cfg.agent.system_prompt,
+                "retry_attempts": cfg.agent.retry_attempts,
+                "tool_approval_required": cfg.agent.tool_approval_required,
+            },
+            "gateway": {
+                "port": cfg.gateway.port,
+                "rate_limit_rpm": cfg.gateway.rate_limit_rpm,
+                "cors_origins": cfg.gateway.cors_origins,
+            },
+            "channels": {
+                "gchat": {"enabled": cfg.channels.gchat.enabled, "mode": cfg.channels.gchat.mode},
+                "slack": {"enabled": cfg.channels.slack.enabled},
+                "discord": {"enabled": cfg.channels.discord.enabled},
+                "whatsapp": {"enabled": cfg.channels.whatsapp.enabled},
+                "telegram": {
+                    "enabled": cfg.channels.telegram.enabled,
+                    "mode": cfg.channels.telegram.mode,
+                },
+            },
+            "ui": {"enabled": cfg.ui.enabled, "theme": cfg.ui.theme},
+            "rag": {"enabled": cfg.rag.enabled},
+            "observability": {
+                "enabled": cfg.observability.enabled,
+                "service_name": cfg.observability.service_name,
+            },
+            "cron": {
+                "jobs_count": len(cfg.cron.jobs),
+                "check_interval": cfg.cron.check_interval_seconds,
+            },
+        }
+
+    @api.put("/api/v1/config")
+    async def update_config(body: dict):
+        """Update configuration fields at runtime."""
+        from fastapi.responses import JSONResponse
+
+        updated = []
+        errors = []
+
+        # Provider default
+        if "default_provider" in body:
+            valid = ["anthropic", "openai", "deepseek", "gemini", "qwen", "mistral", "groq"]
+            if body["default_provider"] in valid:
+                cfg.providers.default = body["default_provider"]
+                updated.append("default_provider")
+            else:
+                errors.append(f"Invalid provider: {body['default_provider']}")
+
+        # Agent settings
+        if "max_iterations" in body:
+            val = int(body["max_iterations"])
+            if 1 <= val <= 100:
+                cfg.agent.max_iterations = val
+                loop.max_iterations = val
+                updated.append("max_iterations")
+            else:
+                errors.append("max_iterations must be 1-100")
+
+        if "system_prompt" in body:
+            cfg.agent.system_prompt = str(body["system_prompt"])
+            loop.system_prompt = cfg.agent.system_prompt
+            updated.append("system_prompt")
+
+        if "max_session_messages" in body:
+            val = int(body["max_session_messages"])
+            if 1 <= val <= 500:
+                cfg.agent.max_session_messages = val
+                updated.append("max_session_messages")
+            else:
+                errors.append("max_session_messages must be 1-500")
+
+        if "rate_limit_rpm" in body:
+            val = int(body["rate_limit_rpm"])
+            if val >= 0:
+                cfg.gateway.rate_limit_rpm = val
+                updated.append("rate_limit_rpm")
+
+        if "theme" in body:
+            cfg.ui.theme = body["theme"]
+            updated.append("theme")
+
+        # Channel settings
+        if "channels" in body and isinstance(body["channels"], dict):
+            valid_channels = ["gchat", "slack", "discord", "whatsapp", "telegram"]
+            for ch_name, ch_data in body["channels"].items():
+                if ch_name not in valid_channels:
+                    errors.append(f"Unknown channel: {ch_name}")
+                    continue
+                ch_cfg = getattr(cfg.channels, ch_name)
+                was_enabled = getattr(ch_cfg, "enabled", False)
+                if isinstance(ch_data, dict):
+                    for k, v in ch_data.items():
+                        if hasattr(ch_cfg, k):
+                            setattr(ch_cfg, k, v)
+                    updated.append(f"channels.{ch_name}")
+
+                # Auto-start/stop channels that need background tasks
+                now_enabled = getattr(ch_cfg, "enabled", False)
+                if ch_name in _channels:
+                    ch_obj = _channels[ch_name]
+                    if now_enabled and not was_enabled:
+                        await ch_obj.start()
+                        logger.info(f"Channel '{ch_name}' started via config update")
+                    elif not now_enabled and was_enabled:
+                        await ch_obj.stop()
+                        logger.info(f"Channel '{ch_name}' stopped via config update")
+
+        if errors:
+            return JSONResponse(
+                {"updated": updated, "errors": errors},
+                status_code=400 if not updated else 200,
+            )
+        return {"updated": updated, "errors": []}
+
+    # ------------------------------------------------------------------
+    # Connector Configuration API
+    # ------------------------------------------------------------------
+    @api.get("/api/v1/config/connectors")
+    async def list_configured_connectors():
+        """Return all connector instances from config."""
+        result = {}
+        for name, cc in cfg.connectors.instances.items():
+            result[name] = {
+                "type": cc.type,
+                "driver": cc.driver,
+                "host": cc.host,
+                "port": cc.port,
+                "database": cc.database,
+                "username": cc.username,
+                "base_url": cc.base_url,
+                "read_only": cc.read_only,
+                "timeout": cc.timeout,
+                "max_rows": cc.max_rows,
+            }
+        return {"connectors": result}
+
+    @api.put("/api/v1/config/connectors/{name}")
+    async def upsert_connector(name: str, body: dict):
+        """Add or update a connector configuration."""
+        from databot.config.schema import ConnectorConfig
+        from databot.connectors.factory import create_connector
+
+        try:
+            cc = ConnectorConfig(**body)
+            cfg.connectors.instances[name] = cc
+
+            # Load into live connector registry
+            if connector_registry:
+                try:
+                    connector = create_connector(name, cc.to_dict())
+                    connector_registry.register(connector)
+                    await connector.connect()
+                    logger.info(f"Connector '{name}' registered and connected")
+                except Exception as e:
+                    logger.warning(f"Connector '{name}' saved but connect failed: {e}")
+
+            # Auto-register Airflow tool if this is the airflow connector
+            if name == "airflow" and cc.type == "rest_api":
+                if not tools.get("airflow"):
+                    from databot.tools.airflow import AirflowTool
+
+                    tools.register(
+                        AirflowTool(
+                            base_url=cc.base_url,
+                            username=cc.username,
+                            password=cc.password,
+                            connector_registry=connector_registry,
+                        )
+                    )
+                    logger.info("AirflowTool auto-registered from connector config")
+
+            return {"status": "ok", "name": name, "action": "upserted"}
+        except Exception as e:
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse({"error": str(e)}, status_code=400)
+
+    @api.delete("/api/v1/config/connectors/{name}")
+    async def delete_connector(name: str):
+        """Remove a connector configuration."""
+        from fastapi.responses import JSONResponse
+
+        if name in cfg.connectors.instances:
+            del cfg.connectors.instances[name]
+            # Deregister from live registry
+            if connector_registry:
+                connector_registry.deregister(name)
+            return {"status": "ok", "name": name, "action": "deleted"}
+        return JSONResponse({"error": f"Connector '{name}' not found"}, status_code=404)
+
+    # ------------------------------------------------------------------
+    # Channel Configuration API
+    # ------------------------------------------------------------------
+    @api.get("/api/v1/config/channels")
+    async def get_channels_config():
+        """Return full channel configurations (masking secrets)."""
+
+        def _mask(v):
+            if not v:
+                return ""
+            return v[:4] + "****" + v[-4:] if len(v) > 8 else "****"
+
+        return {
+            "channels": {
+                "gchat": {
+                    "enabled": cfg.channels.gchat.enabled,
+                    "mode": cfg.channels.gchat.mode,
+                    "webhook_url": _mask(cfg.channels.gchat.webhook_url),
+                    "project_id": cfg.channels.gchat.project_id,
+                },
+                "slack": {
+                    "enabled": cfg.channels.slack.enabled,
+                    "bot_token": _mask(cfg.channels.slack.bot_token),
+                    "default_channel": cfg.channels.slack.default_channel,
+                },
+                "discord": {
+                    "enabled": cfg.channels.discord.enabled,
+                    "bot_token": _mask(cfg.channels.discord.bot_token),
+                    "command_prefix": cfg.channels.discord.command_prefix,
+                },
+                "whatsapp": {
+                    "enabled": cfg.channels.whatsapp.enabled,
+                    "phone_number_id": cfg.channels.whatsapp.phone_number_id,
+                    "access_token": _mask(cfg.channels.whatsapp.access_token),
+                    "verify_token": _mask(cfg.channels.whatsapp.verify_token),
+                },
+                "telegram": {
+                    "enabled": cfg.channels.telegram.enabled,
+                    "bot_token": _mask(cfg.channels.telegram.bot_token),
+                    "mode": cfg.channels.telegram.mode,
+                    "webhook_url": cfg.channels.telegram.webhook_url,
+                },
+            }
+        }
+
+    @api.get("/api/v1/stats")
+    async def get_stats():
+        """Return runtime statistics."""
+
+        session_keys = sessions.store.list_keys()
+        total_messages = 0
+        for key in session_keys:
+            h = sessions.store.get_history(key)
+            total_messages += len(h)
+
+        return {
+            "sessions_count": len(session_keys),
+            "total_messages": total_messages,
+            "tools_count": len(tools.get_definitions()),
+            "skills_total": len(skill_registry.summary()),
+            "skills_enabled": len([s for s in skill_registry.summary() if s.get("enabled")]),
+            "connectors_count": len(connector_registry.list_all()) if connector_registry else 0,
+            "provider": cfg.providers.default,
+            "model": getattr(cfg.providers, cfg.providers.default, cfg.providers.anthropic).model,
+            "cron_jobs": len(cfg.cron.jobs),
+            "usage": usage_tracker.global_stats(),
+            "session_cost_budget_usd": usage_tracker.session_budget_usd,
+        }
+
+    @api.get("/api/v1/monitors")
+    async def get_monitors():
+        """List configured data monitors and their latest status."""
+        return {"monitors": monitor_service.list_monitors()}
+
+    @api.get("/api/v1/audit")
+    async def get_audit(limit: int = 100, tool: str = ""):
+        """Return recent tool-execution audit records."""
+        return {
+            "enabled": audit_log.enabled,
+            "entries": audit_log.recent(limit=min(limit, 1000), tool=tool),
+        }
+
+    @api.get("/api/v1/queries")
+    async def get_saved_queries():
+        """List saved queries in the library."""
+        sq = tools.get("saved_query")
+        return {"queries": sq.store.list_all() if sq else []}
+
+    @api.get("/api/v1/usage")
+    async def get_usage():
+        """Return LLM token usage and cost, globally and per session."""
+        return {
+            "global": usage_tracker.global_stats(),
+            "session_budget_usd": usage_tracker.session_budget_usd,
+            "sessions": usage_tracker.all_session_stats(),
+        }
+
+    @api.post("/api/v1/config/save")
+    async def save_config():
+        """Persist current config to disk."""
+        try:
+            cfg.save()
+            return {"status": "saved"}
+        except Exception as e:
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse({"error": str(e)}, status_code=500)
+
+    # ------------------------------------------------------------------
     # Embedded UI
     # ------------------------------------------------------------------
     if cfg.ui.enabled:
@@ -1043,24 +1619,71 @@ async def _run_gateway(cfg, port: int):
         async def ui_index():
             index_path = STATIC_DIR / "index.html"
             if index_path.exists():
-                return FileResponse(index_path, media_type="text/html")
+                return FileResponse(
+                    index_path,
+                    media_type="text/html",
+                    headers={
+                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                        "Pragma": "no-cache",
+                        "Expires": "0",
+                    },
+                )
             return HTMLResponse("<h1>databot UI not found</h1>", status_code=404)
 
-    # Google Chat routes
+    # ------------------------------------------------------------------
+    # Channel setup — always register routes so runtime enable works
+    # ------------------------------------------------------------------
+    from databot.channels.gchat import GChatChannel
+    from databot.channels.telegram import TelegramChannel
+    from databot.channels.whatsapp import WhatsAppChannel
+
+    # Keep channel instances in a dict for runtime access
+    _channels: dict = {}
+
+    # Google Chat — always register routes
+    gchat = GChatChannel(
+        bus=bus,
+        mode=cfg.channels.gchat.mode,
+        webhook_url=cfg.channels.gchat.webhook_url,
+        cfg_ref=cfg,
+        loop_ref=loop,
+    )
+    _channels["gchat"] = gchat
+    api.include_router(gchat.get_fastapi_routes())
     if cfg.channels.gchat.enabled:
-        from databot.channels.gchat import GChatChannel
-
-        gchat = GChatChannel(
-            bus=bus,
-            mode=cfg.channels.gchat.mode,
-            webhook_url=cfg.channels.gchat.webhook_url,
-        )
         await gchat.start()
+        logger.info(f"Google Chat channel started (mode={cfg.channels.gchat.mode})")
 
-        if cfg.channels.gchat.mode == "app":
-            api.include_router(gchat.get_fastapi_routes())
+    # WhatsApp — always register routes
+    whatsapp_channel = WhatsAppChannel(
+        bus=bus,
+        phone_number_id=cfg.channels.whatsapp.phone_number_id,
+        access_token=cfg.channels.whatsapp.access_token,
+        verify_token=cfg.channels.whatsapp.verify_token,
+        app_secret=cfg.channels.whatsapp.app_secret,
+    )
+    _channels["whatsapp"] = whatsapp_channel
+    api.include_router(whatsapp_channel.get_fastapi_routes())
+    if cfg.channels.whatsapp.enabled:
+        await whatsapp_channel.start()
+        logger.info("WhatsApp channel started")
 
-    # Slack channel
+    # Telegram — always register routes and start polling
+    telegram_channel = TelegramChannel(
+        bus=bus,
+        bot_token=cfg.channels.telegram.bot_token,
+        mode=cfg.channels.telegram.mode,
+        webhook_url=cfg.channels.telegram.webhook_url,
+        cfg_ref=cfg,
+        loop_ref=loop,
+    )
+    _channels["telegram"] = telegram_channel
+    api.include_router(telegram_channel.get_fastapi_routes())
+    if cfg.channels.telegram.enabled:
+        await telegram_channel.start()
+        logger.info(f"Telegram channel started (mode={cfg.channels.telegram.mode})")
+
+    # Slack (no webhook routes — uses Socket Mode)
     if cfg.channels.slack.enabled:
         from databot.channels.slack import SlackChannel
 
@@ -1070,10 +1693,11 @@ async def _run_gateway(cfg, port: int):
             app_token=cfg.channels.slack.app_token,
             signing_secret=cfg.channels.slack.signing_secret,
         )
+        _channels["slack"] = slack
         await slack.start()
         logger.info("Slack channel started")
 
-    # Discord channel
+    # Discord (uses Gateway websocket, no HTTP routes)
     if cfg.channels.discord.enabled:
         from databot.channels.discord import DiscordChannel
 
@@ -1082,38 +1706,9 @@ async def _run_gateway(cfg, port: int):
             bot_token=cfg.channels.discord.bot_token,
             command_prefix=cfg.channels.discord.command_prefix,
         )
+        _channels["discord"] = discord_channel
         asyncio.create_task(discord_channel.start())
         logger.info("Discord channel started")
-
-    # WhatsApp channel
-    if cfg.channels.whatsapp.enabled:
-        from databot.channels.whatsapp import WhatsAppChannel
-
-        whatsapp_channel = WhatsAppChannel(
-            bus=bus,
-            phone_number_id=cfg.channels.whatsapp.phone_number_id,
-            access_token=cfg.channels.whatsapp.access_token,
-            verify_token=cfg.channels.whatsapp.verify_token,
-            app_secret=cfg.channels.whatsapp.app_secret,
-        )
-        await whatsapp_channel.start()
-        api.include_router(whatsapp_channel.get_fastapi_routes())
-        logger.info("WhatsApp channel started")
-
-    # Telegram channel
-    if cfg.channels.telegram.enabled:
-        from databot.channels.telegram import TelegramChannel
-
-        telegram_channel = TelegramChannel(
-            bus=bus,
-            bot_token=cfg.channels.telegram.bot_token,
-            mode=cfg.channels.telegram.mode,
-            webhook_url=cfg.channels.telegram.webhook_url,
-        )
-        await telegram_channel.start()
-        if cfg.channels.telegram.mode == "webhook":
-            api.include_router(telegram_channel.get_fastapi_routes())
-        logger.info(f"Telegram channel started (mode={cfg.channels.telegram.mode})")
 
     # ------------------------------------------------------------------
     # Startup health check — verify critical components before serving
@@ -1143,6 +1738,7 @@ async def _run_gateway(cfg, port: int):
     # Start services
     agent_task = asyncio.create_task(loop.run())
     cron_task = asyncio.create_task(cron_service.run())
+    monitor_task = asyncio.create_task(monitor_service.run())
 
     config = uvicorn.Config(api, host=cfg.gateway.host, port=port, log_level="info")
     server = uvicorn.Server(config)
@@ -1158,8 +1754,10 @@ async def _run_gateway(cfg, port: int):
     finally:
         loop.stop()
         cron_service.stop()
+        monitor_service.stop()
         agent_task.cancel()
         cron_task.cancel()
+        monitor_task.cancel()
         if connector_registry:
             await connector_registry.disconnect_all()
         if tracer:

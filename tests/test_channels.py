@@ -80,6 +80,28 @@ class TestWhatsAppChannel:
         routes = [r.path for r in router.routes]
         assert "/webhooks/whatsapp" in routes
 
+    def test_signature_skipped_without_secret(self):
+        from databot.channels.whatsapp import WhatsAppChannel
+
+        channel = WhatsAppChannel(bus=MessageBus())  # no app_secret
+        assert channel._verify_signature(b"{}", "") is True
+
+    def test_signature_verification(self):
+        import hashlib
+        import hmac
+
+        from databot.channels.whatsapp import WhatsAppChannel
+
+        secret = "s3cr3t"
+        channel = WhatsAppChannel(bus=MessageBus(), app_secret=secret)
+        body = b'{"entry": []}'
+        good = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        assert channel._verify_signature(body, good) is True
+        # Wrong signature / tampered body / missing prefix all rejected.
+        assert channel._verify_signature(body, "sha256=deadbeef") is False
+        assert channel._verify_signature(b'{"entry": [1]}', good) is False
+        assert channel._verify_signature(body, "") is False
+
     @pytest.mark.asyncio
     async def test_send_without_config(self):
         """Sending without phone_number_id should not raise."""
@@ -255,6 +277,7 @@ class TestTelegramChannel:
 
         bus = MessageBus()
         channel = TelegramChannel(bus=bus)
+        channel._running = True
         channel.send = AsyncMock()
 
         msg_other = OutboundMessage(channel="slack", chat_id="x", content="hi")
@@ -327,6 +350,7 @@ class TestTelegramChannel:
 
         bus = MessageBus()
         channel = TelegramChannel(bus=bus, bot_token="fake:token", mode="webhook")
+        channel._running = True
         app = FastAPI()
         app.include_router(channel.get_fastapi_routes())
 

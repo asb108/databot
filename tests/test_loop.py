@@ -98,6 +98,132 @@ class TestAgentLoop:
         assert len(sessions) > 0
 
 
+class TestContextCostIntegration:
+    @pytest.fixture
+    def loop_with_usage(self, tmp_data_dir, mock_provider):
+        from databot.core.cost import UsageTracker
+        from databot.providers.base import LLMResponse, TokenUsage
+
+        mock_provider.chat = AsyncMock(
+            return_value=LLMResponse(
+                content="hi",
+                tool_calls=[],
+                usage=TokenUsage(prompt_tokens=100, completion_tokens=20, total_tokens=120),
+            )
+        )
+        tracker = UsageTracker(session_budget_usd=0.0)
+        loop = AgentLoop(
+            bus=MessageBus(),
+            provider=mock_provider,
+            tools=ToolRegistry(),
+            workspace=tmp_data_dir,
+            sessions=SessionManager(tmp_data_dir),
+            memory=MemoryManager(tmp_data_dir / "memory.db"),
+            usage_tracker=tracker,
+        )
+        return loop, tracker
+
+    @pytest.mark.asyncio
+    async def test_records_usage(self, loop_with_usage):
+        loop, tracker = loop_with_usage
+        msg = InboundMessage(channel="cli", sender_id="u", chat_id="c", content="hi")
+        await loop.process_message(msg)
+        stats = tracker.session_stats(msg.session_key)
+        assert stats["prompt_tokens"] == 100
+        assert stats["completion_tokens"] == 20
+        assert stats["calls"] == 1
+
+    @pytest.mark.asyncio
+    async def test_budget_blocks_before_llm(self, tmp_data_dir, mock_provider):
+        from databot.core.cost import UsageTracker
+
+        tracker = UsageTracker(session_budget_usd=0.01)
+        tracker.record("gpt-4o", 1_000_000, 0, session_key="cli:direct")  # over budget
+        loop = AgentLoop(
+            bus=MessageBus(),
+            provider=mock_provider,
+            tools=ToolRegistry(),
+            workspace=tmp_data_dir,
+            sessions=SessionManager(tmp_data_dir),
+            memory=MemoryManager(tmp_data_dir / "memory.db"),
+            usage_tracker=tracker,
+        )
+        msg = InboundMessage(channel="cli", sender_id="u", chat_id="direct", content="hi")
+        response = await loop.process_message(msg)
+        assert "budget" in response.content.lower()
+        mock_provider.chat.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_stream_budget_blocks_before_llm(self, tmp_data_dir, mock_provider):
+        from databot.core.cost import UsageTracker
+
+        tracker = UsageTracker(session_budget_usd=0.01)
+        tracker.record("gpt-4o", 1_000_000, 0, session_key="cli:stream")
+        mock_provider.chat_stream = MagicMock()
+        loop = AgentLoop(
+            bus=MessageBus(),
+            provider=mock_provider,
+            tools=ToolRegistry(),
+            workspace=tmp_data_dir,
+            sessions=SessionManager(tmp_data_dir),
+            memory=MemoryManager(tmp_data_dir / "memory.db"),
+            usage_tracker=tracker,
+        )
+        msg = InboundMessage(
+            channel="cli", sender_id="u", chat_id="stream", content="hi"
+        )
+        events = [e async for e in loop.process_message_stream(msg)]
+        assert any("budget" in (e.data or "").lower() for e in events)
+        mock_provider.chat_stream.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_compaction_invoked(self, tmp_data_dir, mock_provider):
+        from databot.core.compaction import ConversationCompactor
+
+        compactor = ConversationCompactor(
+            mock_provider, trigger_tokens=10, keep_recent_messages=2
+        )
+        sessions = SessionManager(tmp_data_dir)
+        loop = AgentLoop(
+            bus=MessageBus(),
+            provider=mock_provider,
+            tools=ToolRegistry(),
+            workspace=tmp_data_dir,
+            sessions=sessions,
+            memory=MemoryManager(tmp_data_dir / "memory.db"),
+            compactor=compactor,
+        )
+        # Seed a long history so compaction triggers.
+        session = sessions.get_or_create("cli:direct")
+        for i in range(20):
+            session.add_message("user" if i % 2 == 0 else "assistant", f"old turn {i} " * 20)
+        sessions.save(session)
+
+        await loop.process_direct("new question")
+        # The session now carries a compaction summary.
+        reloaded = sessions.get_or_create("cli:direct")
+        assert reloaded.summary != ""
+
+
+class TestSessionSummaryPersistence:
+    def test_summary_round_trip(self, tmp_path):
+        sessions = SessionManager(tmp_path)
+        s = sessions.get_or_create("k")
+        s.add_message("user", "hello")
+        s.add_message("assistant", "hi there")
+        s.set_summary("- user greeted the bot")
+        sessions.save(s)
+
+        # Drop from cache to force a reload from disk.
+        sessions._cache.clear()
+        reloaded = sessions.get_or_create("k")
+        assert reloaded.summary == "- user greeted the bot"
+        # History excludes the summary (no stray system message).
+        history = reloaded.get_history()
+        assert all(m["role"] != "system" for m in history)
+        assert len(history) == 2
+
+
 class TestMessageBus:
     @pytest.mark.asyncio
     async def test_publish_consume(self):

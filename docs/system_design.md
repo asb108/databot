@@ -183,7 +183,18 @@ The `_build_components(cfg)` function in `databot.cli.commands` orchestrates sta
 4.  Optionally initialize `RAGContext` (ChromaDB vector store)
 5.  Optionally initialize `Tracer` (OpenTelemetry)
 6.  Optionally build multi-agent `Delegator` (Router + 6 specialists)
-7.  Return 10-tuple: `(bus, provider, tools, sessions, memory, workspace, connector_registry, rag_context, tracer, delegator)`
+7.  Build the `UsageTracker` (LLM cost/budget accounting) and, when enabled, the `ConversationCompactor`
+8.  Return 13-tuple: `(bus, provider, tools, sessions, memory, workspace, connector_registry, rag_context, tracer, delegator, skill_registry, usage_tracker, compactor)`
+
+### 2.6 Context & Cost Pipeline
+
+On every turn the `AgentLoop`:
+1.  Enforces the per-session cost budget (`UsageTracker.over_budget`) before spending.
+2.  Compacts old history into a running summary if it exceeds the token trigger (`ConversationCompactor`).
+3.  Trims the request to the model's context window (`fit_messages_to_budget`) so it never exceeds limits.
+4.  Records token usage and dollar cost (`UsageTracker`) and Prometheus metrics after each LLM call.
+
+The `LiteLLMProvider` additionally applies Anthropic prompt-caching breakpoints to the stable system + tool prefix.
 
 ---
 

@@ -21,7 +21,15 @@ class Session:
         max_messages: int = 50,
     ):
         self.key = key
-        self._history: list[dict[str, Any]] = history or []
+        raw = list(history or [])
+        # A leading system entry is the persisted running compaction summary;
+        # carry it separately so it survives history trimming and never breaks
+        # user/assistant alternation.
+        self.summary: str = ""
+        if raw and raw[0].get("role") == "system":
+            self.summary = raw[0].get("content", "")
+            raw = raw[1:]
+        self._history: list[dict[str, Any]] = raw
         self._max_messages = max_messages
 
     def add_message(self, role: str, content: str) -> None:
@@ -33,8 +41,22 @@ class Session:
     def get_history(self) -> list[dict[str, Any]]:
         return list(self._history)
 
+    def set_summary(self, summary: str) -> None:
+        self.summary = summary or ""
+
+    def replace_history(self, history: list[dict[str, Any]]) -> None:
+        """Replace the user/assistant history (used after compaction)."""
+        self._history = list(history)
+
+    def to_storage(self) -> list[dict[str, Any]]:
+        """History as persisted: summary (if any) as a leading system entry."""
+        if self.summary:
+            return [{"role": "system", "content": self.summary}, *self._history]
+        return list(self._history)
+
     def clear(self) -> None:
         self._history = []
+        self.summary = ""
 
 
 class SessionManager:
@@ -71,7 +93,7 @@ class SessionManager:
         while len(self._cache) > self._max_cached:
             evicted_key, evicted_session = self._cache.popitem(last=False)
             # Persist before evicting so no data is lost
-            self.store.save_history(evicted_key, evicted_session.get_history())
+            self.store.save_history(evicted_key, evicted_session.to_storage())
             logger.debug(f"Evicted session '{evicted_key}' from cache ({len(self._cache)} remain)")
 
     # ------------------------------------------------------------------
@@ -90,7 +112,7 @@ class SessionManager:
         return session
 
     def save(self, session: Session) -> None:
-        self.store.save_history(session.key, session.get_history())
+        self.store.save_history(session.key, session.to_storage())
 
     def delete(self, key: str) -> None:
         self.store.delete(key)

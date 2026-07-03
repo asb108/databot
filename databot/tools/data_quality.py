@@ -2,35 +2,13 @@
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING, Any
 
+from databot.connectors.identifiers import validate_identifier as _validate_identifier
 from databot.tools.base import BaseTool
 
 if TYPE_CHECKING:
     from databot.tools.sql import SQLTool
-
-# Strict pattern: only allows alphanumeric, underscore, dot (for schema.table), and backtick
-_IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.`]*$")
-
-
-def _validate_identifier(value: str, label: str = "identifier") -> str:
-    """Validate that a value is a safe SQL identifier (table or column name).
-
-    Raises:
-        ValueError: If the identifier contains unsafe characters.
-    """
-    # Strip surrounding backticks for validation
-    stripped = value.strip("`")
-    if not stripped or not _IDENTIFIER_RE.match(stripped):
-        raise ValueError(
-            f"Invalid {label}: '{value}'. "
-            f"Only alphanumeric characters, underscores, dots, and backticks are allowed."
-        )
-    # Prevent excessively long identifiers
-    if len(stripped) > 128:
-        raise ValueError(f"Invalid {label}: '{value}' exceeds maximum length of 128 characters.")
-    return value
 
 
 class DataQualityTool(BaseTool):

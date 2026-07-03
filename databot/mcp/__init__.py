@@ -174,6 +174,17 @@ def _build_mcp_server(cfg: Any | None = None):
                 )
             )
 
+        # Ticket support tool
+        from databot.tools.ticket import TicketTool
+
+        tools.register(
+            TicketTool(
+                api_url=config.tools.ticket.api_url,
+                api_token=config.tools.ticket.api_token,
+                system_type=config.tools.ticket.system_type,
+            )
+        )
+
         # Domain tools from connectors
         from databot.connectors.base import ConnectorType
 

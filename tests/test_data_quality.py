@@ -19,7 +19,12 @@ class TestIdentifierValidation:
         assert _validate_identifier("schema.table", "table") == "schema.table"
 
     def test_valid_backtick(self):
-        assert _validate_identifier("`my_table`", "table") == "`my_table`"
+        # Surrounding quoting is stripped; the cleaned identifier is returned.
+        assert _validate_identifier("`my_table`", "table") == "my_table"
+
+    def test_rejects_embedded_backtick(self):
+        with pytest.raises(ValueError, match="Invalid"):
+            _validate_identifier("my`table", "table")
 
     def test_rejects_semicolon(self):
         with pytest.raises(ValueError, match="Invalid"):
@@ -38,11 +43,11 @@ class TestIdentifierValidation:
             _validate_identifier("table -- comment", "table")
 
     def test_rejects_empty(self):
-        with pytest.raises(ValueError, match="Invalid"):
+        with pytest.raises(ValueError, match="empty"):
             _validate_identifier("", "table")
 
     def test_rejects_too_long(self):
-        with pytest.raises(ValueError, match="exceeds maximum"):
+        with pytest.raises(ValueError, match="exceeds the maximum"):
             _validate_identifier("a" * 200, "table")
 
     def test_rejects_union_injection(self):

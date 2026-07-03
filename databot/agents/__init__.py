@@ -20,6 +20,8 @@ from typing import Any
 
 from loguru import logger
 
+from databot.core.cost import record_llm_usage as _record_usage
+from databot.core.tokens import fit_messages_to_budget, get_context_window
 from databot.providers.base import LLMProvider
 from databot.tools.base import ToolRegistry
 
@@ -50,12 +52,16 @@ class SpecialistAgent:
         tools: ToolRegistry,
         model: str = "",
         max_iterations: int = 10,
+        usage_tracker: Any | None = None,
+        context_budget_ratio: float = 0.75,
     ):
         self.spec = spec
         self._provider = provider
         self._all_tools = tools
         self._model = model or provider.get_default_model()
         self._max_iterations = max_iterations
+        self._usage = usage_tracker
+        self._input_budget = int(get_context_window(self._model) * context_budget_ratio)
 
     def _get_tool_definitions(self) -> list[dict[str, Any]]:
         """Get tool definitions filtered to this agent's scope."""
@@ -69,6 +75,8 @@ class SpecialistAgent:
         user_message: str,
         history: list[dict[str, Any]] | None = None,
         extra_context: str = "",
+        session_key: str = "",
+        summary: str = "",
     ) -> str:
         """Run the specialist agent on a message. Returns the final response."""
         messages: list[dict[str, Any]] = []
@@ -78,6 +86,15 @@ class SpecialistAgent:
         if extra_context:
             sys_prompt += f"\n\nAdditional context:\n{extra_context}"
         messages.append({"role": "system", "content": sys_prompt})
+
+        # Running compaction summary of earlier turns (second system message).
+        if summary:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": f"## Summary of earlier conversation\n{summary}",
+                }
+            )
 
         # History
         if history:
@@ -89,11 +106,14 @@ class SpecialistAgent:
         tool_defs = self._get_tool_definitions() or None
 
         for iteration in range(self._max_iterations):
+            # Keep the request within the model's context window.
+            messages, _ = fit_messages_to_budget(messages, self._model, self._input_budget)
             response = await self._provider.chat(
                 messages=messages,
                 tools=tool_defs,
                 model=self._model,
             )
+            _record_usage(self._usage, self._model, response, session_key)
 
             if response.has_tool_calls:
                 # Add assistant message
@@ -163,13 +183,20 @@ class Router:
         agents: dict[str, SpecialistAgent],
         provider: LLMProvider,
         model: str = "",
+        usage_tracker: Any | None = None,
     ):
         self._agents = agents
         self._provider = provider
         self._model = model or provider.get_default_model()
         self._default_agent = "general"
+        self._usage = usage_tracker
 
-    async def route(self, user_message: str, history: list[dict[str, Any]] | None = None) -> str:
+    async def route(
+        self,
+        user_message: str,
+        history: list[dict[str, Any]] | None = None,
+        session_key: str = "",
+    ) -> str:
         """Determine which agent should handle the message. Returns agent name."""
         agent_desc = "\n".join(
             f"- {name}: {agent.spec.description}" for name, agent in self._agents.items()
@@ -183,6 +210,7 @@ class Router:
 
         try:
             response = await self._provider.chat(messages=messages, model=self._model)
+            _record_usage(self._usage, self._model, response, session_key)
             content = (response.content or "").strip()
 
             # Try to parse JSON
@@ -225,22 +253,83 @@ class Delegator:
         self,
         agents: dict[str, SpecialistAgent],
         router: Router,
+        usage_tracker: Any | None = None,
+        sessions: Any | None = None,
+        compactor: Any | None = None,
+        slash_handler: Any | None = None,
     ):
         self._agents = agents
         self._router = router
+        self._usage = usage_tracker
+        # Optional session manager + compactor give multi-agent mode the same
+        # conversation memory and history compaction as the single-agent loop.
+        self._sessions = sessions
+        self._compactor = compactor
+        self._slash = slash_handler
+
+    def _over_budget_message(self, session_key: str) -> str | None:
+        if self._usage and session_key and self._usage.over_budget(session_key):
+            return (
+                "This conversation has reached its configured LLM cost budget "
+                f"(${self._usage.session_budget_usd:.2f}). Start a new session or "
+                "raise `agent.session_cost_budget_usd` to continue."
+            )
+        return None
+
+    async def _load_session(
+        self, session_key: str, history: list[dict[str, Any]] | None
+    ) -> tuple[Any | None, list[dict[str, Any]] | None, str]:
+        """Load session history + summary, compacting old turns when needed.
+
+        Returns ``(session, history, summary)``. When no session manager is
+        configured, the caller-supplied ``history`` is used unchanged.
+        """
+        if not self._sessions or not session_key:
+            return None, history, ""
+        session = self._sessions.get_or_create(session_key)
+        if self._compactor:
+            try:
+                result = await self._compactor.compact(session.get_history(), session.summary)
+            except Exception as e:
+                logger.warning(f"Multi-agent compaction failed (ignored): {e}")
+                result = None
+            if result:
+                recent, summary = result
+                session.replace_history(recent)
+                session.set_summary(summary)
+                self._sessions.save(session)
+        return session, session.get_history(), session.summary
+
+    def _finalize(self, session: Any | None, user_message: str, response: str) -> None:
+        if session is not None:
+            session.add_message("user", user_message)
+            session.add_message("assistant", response)
+            self._sessions.save(session)
 
     async def handle(
         self,
         user_message: str,
         history: list[dict[str, Any]] | None = None,
         extra_context: str = "",
+        session_key: str = "",
     ) -> str:
         """Route and handle a user message. Returns the specialist's response."""
-        agent_name = await self._router.route(user_message, history)
+        if self._slash:
+            handled = await self._slash.handle(user_message, session_key)
+            if handled is not None:
+                return handled
+
+        budget_msg = self._over_budget_message(session_key)
+        if budget_msg:
+            return budget_msg
+
+        session, history, summary = await self._load_session(session_key, history)
+        agent_name = await self._router.route(user_message, history, session_key)
         agent = self._agents[agent_name]
 
         logger.info(f"Delegating to '{agent_name}': {user_message[:80]}")
-        response = await agent.run(user_message, history, extra_context)
+        response = await agent.run(user_message, history, extra_context, session_key, summary)
+        self._finalize(session, user_message, response)
         return response
 
     async def handle_with_metadata(
@@ -248,12 +337,24 @@ class Delegator:
         user_message: str,
         history: list[dict[str, Any]] | None = None,
         extra_context: str = "",
+        session_key: str = "",
     ) -> dict[str, Any]:
         """Like handle() but returns metadata about routing."""
-        agent_name = await self._router.route(user_message, history)
+        if self._slash:
+            handled = await self._slash.handle(user_message, session_key)
+            if handled is not None:
+                return {"agent": "slash", "response": handled, "agent_description": "command"}
+
+        budget_msg = self._over_budget_message(session_key)
+        if budget_msg:
+            return {"agent": "none", "response": budget_msg, "agent_description": "budget"}
+
+        session, history, summary = await self._load_session(session_key, history)
+        agent_name = await self._router.route(user_message, history, session_key)
         agent = self._agents[agent_name]
 
-        response = await agent.run(user_message, history, extra_context)
+        response = await agent.run(user_message, history, extra_context, session_key, summary)
+        self._finalize(session, user_message, response)
         return {
             "agent": agent_name,
             "response": response,
@@ -334,6 +435,11 @@ def build_default_agents(
     tools: ToolRegistry,
     model: str = "",
     specs: dict[str, AgentSpec] | None = None,
+    usage_tracker: Any | None = None,
+    context_budget_ratio: float = 0.75,
+    sessions: Any | None = None,
+    compactor: Any | None = None,
+    slash_handler: Any | None = None,
 ) -> tuple[dict[str, SpecialistAgent], Router, Delegator]:
     """Build the default multi-agent system.
 
@@ -341,9 +447,26 @@ def build_default_agents(
     """
     specs = specs or DEFAULT_AGENT_SPECS
 
-    agents = {name: SpecialistAgent(spec, provider, tools, model) for name, spec in specs.items()}
+    agents = {
+        name: SpecialistAgent(
+            spec,
+            provider,
+            tools,
+            model,
+            usage_tracker=usage_tracker,
+            context_budget_ratio=context_budget_ratio,
+        )
+        for name, spec in specs.items()
+    }
 
-    router = Router(agents, provider, model)
-    delegator = Delegator(agents, router)
+    router = Router(agents, provider, model, usage_tracker=usage_tracker)
+    delegator = Delegator(
+        agents,
+        router,
+        usage_tracker=usage_tracker,
+        sessions=sessions,
+        compactor=compactor,
+        slash_handler=slash_handler,
+    )
 
     return agents, router, delegator

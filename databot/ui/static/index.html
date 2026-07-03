@@ -12,44 +12,90 @@ tailwind.config = {
     extend: {
       colors: {
         brand: { 50:'#eff6ff', 100:'#dbeafe', 200:'#bfdbfe', 400:'#60a5fa', 500:'#3b82f6', 600:'#2563eb', 700:'#1d4ed8' },
-        surface: { DEFAULT:'#0f172a', card:'#1e293b', hover:'#334155', border:'#475569' },
+        surface: { DEFAULT:'#0f172a', card:'#1e293b', hover:'#334155', border:'#475569', input:'#0f172a' },
+        accent: { green:'#22c55e', red:'#ef4444', yellow:'#eab308', purple:'#a855f7' },
       }
     }
   }
 }
 </script>
 <style>
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
-  .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+  *, *::before, *::after { box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  .scrollbar-thin::-webkit-scrollbar { width: 5px; }
   .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
-  .scrollbar-thin::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: #475569; }
+  html { scroll-behavior: smooth; }
+  .page { min-height: 0; }
+  .scroll-area { overflow-y: auto; scroll-behavior: smooth; }
   @keyframes pulse-dot { 0%,80%,100% { opacity:.3; } 40% { opacity:1; } }
   .typing-dot { animation: pulse-dot 1.4s infinite ease-in-out both; }
   .typing-dot:nth-child(2) { animation-delay: .2s; }
   .typing-dot:nth-child(3) { animation-delay: .4s; }
-  .fade-in { animation: fadeIn .2s ease-in; }
-  @keyframes fadeIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:translateY(0); } }
+  .fade-in { animation: fadeIn .25s ease-out; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+  .slide-in { animation: slideIn .2s ease-out; }
+  @keyframes slideIn { from { opacity:0; transform:translateX(-8px); } to { opacity:1; transform:translateX(0); } }
   pre code { white-space: pre-wrap; word-break: break-word; }
+  .toggle-switch { position:relative; width:36px; height:20px; }
+  .toggle-switch input { opacity:0; width:0; height:0; }
+  .toggle-slider { position:absolute; inset:0; background:#334155; border-radius:10px; cursor:pointer; transition:.2s; }
+  .toggle-slider::before { content:''; position:absolute; height:16px; width:16px; left:2px; top:2px; background:#94a3b8; border-radius:50%; transition:.2s; }
+  .toggle-switch input:checked + .toggle-slider { background:#2563eb; }
+  .toggle-switch input:checked + .toggle-slider::before { transform:translateX(16px); background:#fff; }
+  .stat-card { transition: transform .15s ease, box-shadow .15s ease; }
+  .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,.3); }
+  .toast { animation: toastIn .3s ease-out, toastOut .3s ease-in 2.7s forwards; }
+  @keyframes toastIn { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes toastOut { from { opacity:1; } to { opacity:0; transform:translateY(-10px); } }
+  .code-block-wrapper { position: relative; }
+  .copy-btn { position:absolute; top:6px; right:6px; opacity:0; transition:opacity .15s; }
+  .code-block-wrapper:hover .copy-btn { opacity:1; }
+  .chat-msg-time { font-size:10px; opacity:0; transition:opacity .15s; }
+  .chat-msg:hover .chat-msg-time { opacity:.6; }
+  .sidebar-collapsed { width: 56px !important; }
+  .sidebar-collapsed .sidebar-text { display: none; }
+  .sidebar-collapsed .sidebar-header-text { display: none; }
+  .sidebar-collapsed .sidebar-version { display: none; }
+  .sidebar-collapsed .tab-btn { justify-content: center; padding-left: 0; padding-right: 0; }
+  .sidebar-collapsed .tab-btn span:first-child { margin: 0; }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { -moz-appearance: textfield; }
 </style>
 </head>
 <body class="bg-surface text-gray-200 h-screen flex overflow-hidden">
 
+<!-- Toast container -->
+<div id="toast-container" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>
+
 <!-- Sidebar -->
-<aside id="sidebar" class="w-56 bg-surface-card border-r border-surface-border flex flex-col shrink-0">
-  <div class="p-4 border-b border-surface-border">
-    <h1 class="text-lg font-bold text-brand-400">&#x1F916; databot</h1>
-    <p class="text-xs text-gray-500 mt-0.5">AI Data Assistant</p>
+<aside id="sidebar" class="w-56 bg-surface-card border-r border-surface-border flex flex-col shrink-0 transition-all duration-200">
+  <div class="p-4 border-b border-surface-border flex items-center justify-between">
+    <div>
+      <h1 class="text-lg font-bold text-brand-400 flex items-center gap-1.5">
+        <span>&#x1F916;</span>
+        <span class="sidebar-header-text">databot</span>
+      </h1>
+      <p class="text-xs text-gray-500 mt-0.5 sidebar-header-text">AI Data Assistant</p>
+    </div>
+    <button onclick="toggleSidebar()" class="text-gray-500 hover:text-gray-300 p-1 rounded hover:bg-surface-hover transition-colors" title="Toggle sidebar">
+      <svg id="sidebar-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg>
+    </button>
   </div>
   <nav class="flex-1 py-2 overflow-y-auto scrollbar-thin">
-    <button onclick="switchTab('chat')"     id="tab-chat"       class="tab-btn w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2"><span>&#x1F4AC;</span> Chat</button>
-    <button onclick="switchTab('sessions')" id="tab-sessions"   class="tab-btn w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2"><span>&#x1F4CB;</span> Sessions</button>
-    <button onclick="switchTab('skills')"   id="tab-skills"     class="tab-btn w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2"><span>&#x1F9E9;</span> Skills</button>
-    <button onclick="switchTab('tools')"    id="tab-tools"      class="tab-btn w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2"><span>&#x1F527;</span> Tools</button>
-    <button onclick="switchTab('connectors')" id="tab-connectors" class="tab-btn w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2"><span>&#x1F50C;</span> Connectors</button>
-    <button onclick="switchTab('status')"   id="tab-status"     class="tab-btn w-full text-left px-4 py-2 text-sm hover:bg-surface-hover flex items-center gap-2"><span>&#x1F4CA;</span> Status</button>
+    <button onclick="switchTab('chat')"       id="tab-chat"       class="tab-btn w-full text-left px-4 py-2.5 text-sm hover:bg-surface-hover flex items-center gap-2.5 transition-colors"><span>&#x1F4AC;</span> <span class="sidebar-text">Chat</span></button>
+    <button onclick="switchTab('sessions')"   id="tab-sessions"   class="tab-btn w-full text-left px-4 py-2.5 text-sm hover:bg-surface-hover flex items-center gap-2.5 transition-colors"><span>&#x1F4CB;</span> <span class="sidebar-text">Sessions</span></button>
+    <button onclick="switchTab('skills')"     id="tab-skills"     class="tab-btn w-full text-left px-4 py-2.5 text-sm hover:bg-surface-hover flex items-center gap-2.5 transition-colors"><span>&#x1F9E9;</span> <span class="sidebar-text">Skills</span></button>
+    <button onclick="switchTab('tools')"      id="tab-tools"      class="tab-btn w-full text-left px-4 py-2.5 text-sm hover:bg-surface-hover flex items-center gap-2.5 transition-colors"><span>&#x1F527;</span> <span class="sidebar-text">Tools</span></button>
+    <button onclick="switchTab('connectors')" id="tab-connectors" class="tab-btn w-full text-left px-4 py-2.5 text-sm hover:bg-surface-hover flex items-center gap-2.5 transition-colors"><span>&#x1F50C;</span> <span class="sidebar-text">Connectors</span></button>
+    <button onclick="switchTab('status')"     id="tab-status"     class="tab-btn w-full text-left px-4 py-2.5 text-sm hover:bg-surface-hover flex items-center gap-2.5 transition-colors"><span>&#x1F4CA;</span> <span class="sidebar-text">Status</span></button>
+    <div class="border-t border-surface-border my-2 mx-3"></div>
+    <button onclick="switchTab('settings')"   id="tab-settings"   class="tab-btn w-full text-left px-4 py-2.5 text-sm hover:bg-surface-hover flex items-center gap-2.5 transition-colors"><span>&#x2699;&#xFE0F;</span> <span class="sidebar-text">Settings</span></button>
   </nav>
-  <div class="p-3 border-t border-surface-border text-xs text-gray-500">
-    v0.2.0
+  <div class="p-3 border-t border-surface-border text-xs text-gray-600 sidebar-version">
+    v0.3.0
   </div>
 </aside>
 
@@ -59,15 +105,37 @@ tailwind.config = {
   <!-- ====== CHAT ====== -->
   <div id="page-chat" class="page flex flex-col flex-1">
     <header class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
-      <h2 class="font-semibold">Chat</h2>
-      <button onclick="clearChat()" class="text-xs px-2 py-1 rounded bg-surface-hover hover:bg-surface-border text-gray-400">Clear</button>
+      <div class="flex items-center gap-3">
+        <h2 class="font-semibold">Chat</h2>
+        <span id="chat-model-badge" class="text-[10px] px-2 py-0.5 rounded-full bg-brand-600/20 text-brand-400 font-medium"></span>
+      </div>
+      <div class="flex items-center gap-2">
+        <button onclick="exportChat()" class="text-xs px-2.5 py-1 rounded bg-surface-hover hover:bg-surface-border text-gray-400 transition-colors" title="Export chat">&#x1F4E5; Export</button>
+        <button onclick="clearChat()" class="text-xs px-2.5 py-1 rounded bg-surface-hover hover:bg-surface-border text-gray-400 transition-colors">Clear</button>
+      </div>
     </header>
-    <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin"></div>
+    <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin scroll-smooth">
+      <div id="chat-welcome" class="flex items-center justify-center h-full">
+        <div class="text-center max-w-md">
+          <div class="text-4xl mb-3">&#x1F916;</div>
+          <h3 class="text-lg font-semibold text-gray-300 mb-1">Welcome to databot</h3>
+          <p class="text-sm text-gray-500">Ask me anything about your data, pipelines, or infrastructure.</p>
+          <div class="mt-4 flex flex-wrap gap-2 justify-center">
+            <button onclick="quickPrompt('Show me active Airflow DAGs')" class="text-xs px-3 py-1.5 rounded-full bg-surface-card border border-surface-border hover:border-brand-500 text-gray-400 hover:text-brand-400 transition-colors">Show me active Airflow DAGs</button>
+            <button onclick="quickPrompt('List database tables')" class="text-xs px-3 py-1.5 rounded-full bg-surface-card border border-surface-border hover:border-brand-500 text-gray-400 hover:text-brand-400 transition-colors">List database tables</button>
+            <button onclick="quickPrompt('What tools are available?')" class="text-xs px-3 py-1.5 rounded-full bg-surface-card border border-surface-border hover:border-brand-500 text-gray-400 hover:text-brand-400 transition-colors">What tools are available?</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="p-3 border-t border-surface-border">
       <form id="chat-form" class="flex gap-2" onsubmit="sendMessage(event)">
-        <input id="chat-input" type="text" placeholder="Ask databot anything…"
-          class="flex-1 bg-surface-card border border-surface-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500 placeholder-gray-500" autocomplete="off" />
-        <button type="submit" id="send-btn" class="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">Send</button>
+        <input id="chat-input" type="text" placeholder="Ask databot anything…  (Cmd+K to focus)"
+          class="flex-1 bg-surface-input border border-surface-border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30 placeholder-gray-500 transition-colors" autocomplete="off" />
+        <button type="submit" id="send-btn" class="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5">
+          <span id="send-icon">&#x27A4;</span>
+          <span id="send-text">Send</span>
+        </button>
       </form>
     </div>
   </div>
@@ -76,45 +144,239 @@ tailwind.config = {
   <div id="page-sessions" class="page flex-col flex-1 hidden">
     <header class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
       <h2 class="font-semibold">Sessions</h2>
-      <button onclick="loadSessions()" class="text-xs px-2 py-1 rounded bg-surface-hover hover:bg-surface-border text-gray-400">Refresh</button>
+      <div class="flex items-center gap-2">
+        <span id="sessions-count" class="text-xs text-gray-500"></span>
+        <button onclick="loadSessions()" class="text-xs px-2.5 py-1 rounded bg-surface-hover hover:bg-surface-border text-gray-400 transition-colors">&#x21BB; Refresh</button>
+      </div>
     </header>
-    <div id="sessions-list" class="flex-1 overflow-y-auto p-4 scrollbar-thin"></div>
+    <div id="sessions-list" class="flex-1 overflow-y-auto p-4 scrollbar-thin scroll-smooth"></div>
   </div>
 
   <!-- ====== SKILLS ====== -->
   <div id="page-skills" class="page flex-col flex-1 hidden">
     <header class="px-4 py-3 border-b border-surface-border">
       <h2 class="font-semibold">Skills</h2>
-      <p class="text-xs text-gray-500 mt-0.5">Enable or disable tool bundles</p>
+      <p class="text-xs text-gray-500 mt-0.5">Enable or disable tool bundles at runtime</p>
     </header>
-    <div id="skills-list" class="flex-1 overflow-y-auto p-4 scrollbar-thin"></div>
+    <div id="skills-list" class="flex-1 overflow-y-auto p-4 scrollbar-thin scroll-smooth"></div>
   </div>
 
   <!-- ====== TOOLS ====== -->
   <div id="page-tools" class="page flex-col flex-1 hidden">
-    <header class="px-4 py-3 border-b border-surface-border">
-      <h2 class="font-semibold">Registered Tools</h2>
+    <header class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+      <div>
+        <h2 class="font-semibold">Registered Tools</h2>
+        <p class="text-xs text-gray-500 mt-0.5">All tools available to the agent</p>
+      </div>
+      <input id="tools-search" type="text" placeholder="Search tools…" oninput="filterTools()"
+        class="bg-surface-input border border-surface-border rounded px-2.5 py-1 text-xs focus:outline-none focus:border-brand-500 placeholder-gray-500 w-48" />
     </header>
-    <div id="tools-list" class="flex-1 overflow-y-auto p-4 scrollbar-thin"></div>
+    <div id="tools-list" class="flex-1 overflow-y-auto p-4 scrollbar-thin scroll-smooth"></div>
   </div>
 
   <!-- ====== CONNECTORS ====== -->
   <div id="page-connectors" class="page flex-col flex-1 hidden">
-    <header class="px-4 py-3 border-b border-surface-border">
-      <h2 class="font-semibold">Connectors</h2>
+    <header class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+      <div>
+        <h2 class="font-semibold">Connectors</h2>
+        <p class="text-xs text-gray-500 mt-0.5">Data source connections and health</p>
+      </div>
+      <button onclick="loadConnectors()" class="text-xs px-2.5 py-1 rounded bg-surface-hover hover:bg-surface-border text-gray-400 transition-colors">&#x21BB; Refresh</button>
     </header>
-    <div id="connectors-list" class="flex-1 overflow-y-auto p-4 scrollbar-thin"></div>
+    <div id="connectors-list" class="flex-1 overflow-y-auto p-4 scrollbar-thin scroll-smooth"></div>
   </div>
 
   <!-- ====== STATUS ====== -->
   <div id="page-status" class="page flex-col flex-1 hidden">
-    <header class="px-4 py-3 border-b border-surface-border">
+    <header class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
       <h2 class="font-semibold">System Status</h2>
+      <button onclick="loadStatus()" class="text-xs px-2.5 py-1 rounded bg-surface-hover hover:bg-surface-border text-gray-400 transition-colors">&#x21BB; Refresh</button>
     </header>
-    <div id="status-content" class="flex-1 overflow-y-auto p-4 scrollbar-thin"></div>
+    <div id="status-content" class="flex-1 overflow-y-auto p-4 scrollbar-thin scroll-smooth"></div>
+  </div>
+
+  <!-- ====== SETTINGS ====== -->
+  <div id="page-settings" class="page flex-col flex-1 hidden">
+    <header class="px-4 py-3 border-b border-surface-border flex items-center justify-between">
+      <h2 class="font-semibold">Settings</h2>
+      <div class="flex items-center gap-2">
+        <button onclick="saveConfigToDisk()" class="text-xs px-2.5 py-1 rounded bg-brand-600 hover:bg-brand-700 text-white transition-colors">&#x1F4BE; Save to Disk</button>
+        <button onclick="loadSettings()" class="text-xs px-2.5 py-1 rounded bg-surface-hover hover:bg-surface-border text-gray-400 transition-colors">&#x21BB; Refresh</button>
+      </div>
+    </header>
+    <div id="settings-content" class="flex-1 overflow-y-auto p-4 scrollbar-thin scroll-smooth">
+      <div class="max-w-2xl space-y-6">
+
+        <!-- Provider Settings -->
+        <div class="bg-surface-card border border-surface-border rounded-lg p-4 fade-in">
+          <h3 class="text-sm font-semibold text-gray-200 mb-3 flex items-center gap-2">&#x1F9E0; LLM Provider</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Default Provider</label>
+              <select id="cfg-provider" onchange="updateSetting('default_provider', this.value)"
+                class="w-full bg-surface-input border border-surface-border rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-brand-500">
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openai">OpenAI (GPT)</option>
+                <option value="deepseek">DeepSeek</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="qwen">Qwen</option>
+                <option value="mistral">Mistral</option>
+                <option value="groq">Groq</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Current Model</label>
+              <div id="cfg-model" class="text-sm text-gray-300 bg-surface border border-surface-border rounded px-3 py-2">—</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Agent Settings -->
+        <div class="bg-surface-card border border-surface-border rounded-lg p-4 fade-in">
+          <h3 class="text-sm font-semibold text-gray-200 mb-3 flex items-center gap-2">&#x1F916; Agent Configuration</h3>
+          <div class="space-y-3">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="text-xs text-gray-400 block mb-1">Max Iterations</label>
+                <input id="cfg-max-iter" type="number" min="1" max="100" value="20"
+                  onchange="updateSetting('max_iterations', parseInt(this.value))"
+                  class="w-full bg-surface-input border border-surface-border rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-brand-500" />
+              </div>
+              <div>
+                <label class="text-xs text-gray-400 block mb-1">Max Session Messages</label>
+                <input id="cfg-max-msgs" type="number" min="1" max="500" value="50"
+                  onchange="updateSetting('max_session_messages', parseInt(this.value))"
+                  class="w-full bg-surface-input border border-surface-border rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-brand-500" />
+              </div>
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">System Prompt</label>
+              <textarea id="cfg-system-prompt" rows="4" placeholder="Custom system prompt (leave empty for default)"
+                onchange="updateSetting('system_prompt', this.value)"
+                class="w-full bg-surface-input border border-surface-border rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-brand-500 resize-y placeholder-gray-500 scrollbar-thin"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Gateway Settings -->
+        <div class="bg-surface-card border border-surface-border rounded-lg p-4 fade-in">
+          <h3 class="text-sm font-semibold text-gray-200 mb-3 flex items-center gap-2">&#x1F310; Gateway</h3>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Rate Limit (req/min)</label>
+              <input id="cfg-rate-limit" type="number" min="0" max="10000" value="60"
+                onchange="updateSetting('rate_limit_rpm', parseInt(this.value))"
+                class="w-full bg-surface-input border border-surface-border rounded px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-brand-500" />
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 block mb-1">Port</label>
+              <div id="cfg-port" class="text-sm text-gray-300 bg-surface border border-surface-border rounded px-3 py-2">18790</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Channels Configuration -->
+        <div class="bg-surface-card border border-surface-border rounded-lg p-4 fade-in">
+          <h3 class="text-sm font-semibold text-gray-200 mb-3 flex items-center gap-2">&#x1F4E1; Channels</h3>
+          <div id="cfg-channels" class="space-y-3"></div>
+        </div>
+
+        <!-- Connectors Configuration -->
+        <div class="bg-surface-card border border-surface-border rounded-lg p-4 fade-in">
+          <h3 class="text-sm font-semibold text-gray-200 mb-3 flex items-center justify-between">
+            <span class="flex items-center gap-2">&#x1F50C; Connectors</span>
+            <button onclick="showAddConnectorForm()" class="text-xs px-2 py-1 rounded bg-brand-600 hover:bg-brand-700 text-white transition-colors">+ Add</button>
+          </h3>
+          <div id="cfg-connectors" class="space-y-3"></div>
+          <div id="add-connector-form" class="hidden mt-3 p-3 bg-surface border border-surface-border rounded-lg space-y-2">
+            <div class="text-xs font-medium text-gray-300 mb-2">New Connector</div>
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[10px] text-gray-500 block mb-0.5">Name</label>
+                <input id="new-conn-name" type="text" placeholder="e.g. prod_db"
+                  class="w-full bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-brand-500" />
+              </div>
+              <div>
+                <label class="text-[10px] text-gray-500 block mb-0.5">Type</label>
+                <select id="new-conn-type"
+                  class="w-full bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-brand-500">
+                  <option value="sql">SQL</option>
+                  <option value="rest_api">REST API</option>
+                  <option value="catalog">Catalog</option>
+                  <option value="streaming">Streaming</option>
+                  <option value="processing">Processing</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-[10px] text-gray-500 block mb-0.5">Driver</label>
+                <input id="new-conn-driver" type="text" placeholder="mysql, postgres, trino…"
+                  class="w-full bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-brand-500" />
+              </div>
+              <div>
+                <label class="text-[10px] text-gray-500 block mb-0.5">Host</label>
+                <input id="new-conn-host" type="text" placeholder="localhost"
+                  class="w-full bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-brand-500" />
+              </div>
+              <div>
+                <label class="text-[10px] text-gray-500 block mb-0.5">Port</label>
+                <input id="new-conn-port" type="number" placeholder="3306"
+                  class="w-full bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-brand-500" />
+              </div>
+              <div>
+                <label class="text-[10px] text-gray-500 block mb-0.5">Database</label>
+                <input id="new-conn-database" type="text" placeholder="mydb"
+                  class="w-full bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-brand-500" />
+              </div>
+              <div>
+                <label class="text-[10px] text-gray-500 block mb-0.5">Username</label>
+                <input id="new-conn-username" type="text" placeholder="user"
+                  class="w-full bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-brand-500" />
+              </div>
+              <div>
+                <label class="text-[10px] text-gray-500 block mb-0.5">Password</label>
+                <input id="new-conn-password" type="password" placeholder="••••"
+                  class="w-full bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-brand-500" />
+              </div>
+              <div>
+                <label class="text-[10px] text-gray-500 block mb-0.5">Base URL (REST)</label>
+                <input id="new-conn-base-url" type="text" placeholder="https://api.example.com"
+                  class="w-full bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-brand-500" />
+              </div>
+              <div class="flex items-end gap-2">
+                <label class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">
+                  <input id="new-conn-readonly" type="checkbox" checked class="accent-brand-500" /> Read-only
+                </label>
+              </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-2">
+              <button onclick="hideAddConnectorForm()" class="text-xs px-3 py-1.5 rounded bg-surface-hover text-gray-400 hover:bg-surface-border transition-colors">Cancel</button>
+              <button onclick="saveNewConnector()" class="text-xs px-3 py-1.5 rounded bg-brand-600 hover:bg-brand-700 text-white transition-colors">Save Connector</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Feature Flags -->
+        <div class="bg-surface-card border border-surface-border rounded-lg p-4 fade-in">
+          <h3 class="text-sm font-semibold text-gray-200 mb-3 flex items-center gap-2">&#x1F6A9; Feature Flags</h3>
+          <div id="cfg-features" class="space-y-2"></div>
+        </div>
+
+      </div>
+    </div>
   </div>
 
 </main>
+
+<!-- Session Detail Modal -->
+<div id="session-modal" class="fixed inset-0 bg-black/60 z-40 hidden flex items-center justify-center p-4" onclick="if(event.target===this)closeSessionModal()">
+  <div class="bg-surface-card border border-surface-border rounded-xl max-w-2xl w-full max-h-[80vh] flex flex-col shadow-2xl">
+    <div class="flex items-center justify-between p-4 border-b border-surface-border">
+      <h3 id="session-modal-title" class="font-semibold text-sm"></h3>
+      <button onclick="closeSessionModal()" class="text-gray-400 hover:text-gray-200 text-lg">&times;</button>
+    </div>
+    <div id="session-modal-body" class="flex-1 overflow-y-auto p-4 scrollbar-thin scroll-smooth space-y-2"></div>
+  </div>
+</div>
 
 <script>
 // ---------------------------------------------------------------------------
@@ -124,76 +386,137 @@ const BASE = location.origin;
 let chatHistory = [];
 let currentTab = 'chat';
 let streaming = false;
+let sidebarCollapsed = false;
+let allTools = [];
+
+// ---------------------------------------------------------------------------
+// Toast notifications
+// ---------------------------------------------------------------------------
+function showToast(msg, type) {
+  type = type || 'info';
+  const colors = { info: 'bg-brand-600', success: 'bg-green-600', error: 'bg-red-600', warning: 'bg-yellow-600' };
+  const el = document.createElement('div');
+  el.className = 'toast ' + (colors[type] || colors.info) + ' text-white text-sm px-4 py-2.5 rounded-lg shadow-lg';
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(function() { el.remove(); }, 3000);
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar
+// ---------------------------------------------------------------------------
+function toggleSidebar() {
+  sidebarCollapsed = !sidebarCollapsed;
+  document.getElementById('sidebar').classList.toggle('sidebar-collapsed', sidebarCollapsed);
+}
 
 // ---------------------------------------------------------------------------
 // Tab switching
 // ---------------------------------------------------------------------------
 function switchTab(name) {
   currentTab = name;
-  document.querySelectorAll('.page').forEach(p => { p.classList.add('hidden'); p.classList.remove('flex'); });
-  const page = document.getElementById('page-' + name);
+  document.querySelectorAll('.page').forEach(function(p) { p.classList.add('hidden'); p.classList.remove('flex'); });
+  var page = document.getElementById('page-' + name);
   if (page) { page.classList.remove('hidden'); page.classList.add('flex'); }
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('bg-surface-hover','text-brand-400'));
-  const btn = document.getElementById('tab-' + name);
-  if (btn) { btn.classList.add('bg-surface-hover','text-brand-400'); }
-  // Auto-load data
+  document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('bg-surface-hover','text-brand-400','border-r-2','border-brand-500'); });
+  var btn = document.getElementById('tab-' + name);
+  if (btn) { btn.classList.add('bg-surface-hover','text-brand-400','border-r-2','border-brand-500'); }
   if (name === 'sessions') loadSessions();
   if (name === 'skills') loadSkills();
   if (name === 'tools') loadTools();
   if (name === 'connectors') loadConnectors();
   if (name === 'status') loadStatus();
+  if (name === 'settings') loadSettings();
 }
 
 // ---------------------------------------------------------------------------
 // Chat
 // ---------------------------------------------------------------------------
 function addChatBubble(role, content, isStreaming) {
-  const div = document.createElement('div');
-  div.className = 'fade-in flex ' + (role === 'user' ? 'justify-end' : 'justify-start');
-  const bubble = document.createElement('div');
-  bubble.className = 'max-w-[75%] rounded-lg px-3 py-2 text-sm ' +
+  var welcome = document.getElementById('chat-welcome');
+  if (welcome) welcome.remove();
+
+  var wrapper = document.createElement('div');
+  wrapper.className = 'chat-msg fade-in flex ' + (role === 'user' ? 'justify-end' : 'justify-start');
+
+  var time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  var timeHTML = '<span class="chat-msg-time text-gray-500 ' + (role === 'user' ? 'mr-2' : 'ml-2') + ' self-end">' + time + '</span>';
+
+  var bubble = document.createElement('div');
+  bubble.className = 'max-w-[75%] rounded-xl px-3.5 py-2.5 text-sm leading-relaxed ' +
     (role === 'user'
-      ? 'bg-brand-600 text-white'
-      : 'bg-surface-card border border-surface-border text-gray-200');
+      ? 'bg-brand-600 text-white rounded-br-sm'
+      : 'bg-surface-card border border-surface-border text-gray-200 rounded-bl-sm');
   if (isStreaming) bubble.id = 'stream-bubble';
   bubble.innerHTML = formatMsg(content);
-  div.appendChild(bubble);
-  document.getElementById('chat-messages').appendChild(div);
-  document.getElementById('chat-messages').scrollTop = 999999;
+
+  if (role === 'user') {
+    var timeSpan = document.createElement('span');
+    timeSpan.className = 'chat-msg-time text-gray-500 mr-2 self-end';
+    timeSpan.textContent = time;
+    wrapper.appendChild(timeSpan);
+    wrapper.appendChild(bubble);
+  } else {
+    wrapper.appendChild(bubble);
+    var timeSpan2 = document.createElement('span');
+    timeSpan2.className = 'chat-msg-time text-gray-500 ml-2 self-end';
+    timeSpan2.textContent = time;
+    wrapper.appendChild(timeSpan2);
+  }
+
+  var container = document.getElementById('chat-messages');
+  container.appendChild(wrapper);
+  container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
   return bubble;
 }
 
 function addTypingIndicator() {
-  const div = document.createElement('div');
+  var div = document.createElement('div');
   div.id = 'typing-indicator';
   div.className = 'flex justify-start fade-in';
-  div.innerHTML = '<div class="bg-surface-card border border-surface-border rounded-lg px-4 py-2 flex gap-1">' +
+  div.innerHTML = '<div class="bg-surface-card border border-surface-border rounded-xl px-4 py-2.5 flex gap-1.5">' +
     '<span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full inline-block"></span>' +
     '<span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full inline-block"></span>' +
     '<span class="typing-dot w-1.5 h-1.5 bg-gray-400 rounded-full inline-block"></span></div>';
-  document.getElementById('chat-messages').appendChild(div);
-  document.getElementById('chat-messages').scrollTop = 999999;
+  var container = document.getElementById('chat-messages');
+  container.appendChild(div);
+  container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
 }
 
 function removeTypingIndicator() {
-  const el = document.getElementById('typing-indicator');
+  var el = document.getElementById('typing-indicator');
   if (el) el.remove();
 }
 
 function formatMsg(text) {
   if (!text) return '';
-  // Very basic markdown: code blocks, bold, inline code
-  text = text.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="bg-black/40 rounded p-2 mt-1 mb-1 text-xs overflow-x-auto"><code>$2</code></pre>');
-  text = text.replace(/`([^`]+)`/g, '<code class="bg-black/30 px-1 rounded text-xs">$1</code>');
+  text = text.replace(/```(\w*)\n([\s\S]*?)```/g, function(match, lang, code) {
+    var id = 'code-' + Math.random().toString(36).substr(2, 6);
+    return '<div class="code-block-wrapper my-2"><button class="copy-btn bg-surface-hover text-gray-400 hover:text-white text-xs px-2 py-0.5 rounded" onclick="copyCode(\'' + id + '\')">Copy</button><pre class="bg-black/40 rounded-lg p-3 text-xs overflow-x-auto border border-surface-border"><code id="' + id + '">' + esc(code) + '</code></pre></div>';
+  });
+  text = text.replace(/`([^`]+)`/g, '<code class="bg-black/30 px-1.5 py-0.5 rounded text-xs">$1</code>');
   text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   text = text.replace(/\n/g, '<br>');
   return text;
 }
 
+function copyCode(id) {
+  var el = document.getElementById(id);
+  if (el) {
+    navigator.clipboard.writeText(el.textContent);
+    showToast('Copied to clipboard', 'success');
+  }
+}
+
+function quickPrompt(text) {
+  document.getElementById('chat-input').value = text;
+  document.getElementById('chat-form').dispatchEvent(new Event('submit'));
+}
+
 async function sendMessage(e) {
   e.preventDefault();
-  const input = document.getElementById('chat-input');
-  const msg = input.value.trim();
+  var input = document.getElementById('chat-input');
+  var msg = input.value.trim();
   if (!msg || streaming) return;
   input.value = '';
   addChatBubble('user', msg);
@@ -201,70 +524,58 @@ async function sendMessage(e) {
 
   streaming = true;
   document.getElementById('send-btn').disabled = true;
+  document.getElementById('send-text').textContent = '…';
   addTypingIndicator();
 
   try {
-    // Try streaming first
-    const resp = await fetch(BASE + '/api/v1/stream', {
+    var resp = await fetch(BASE + '/api/v1/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: msg, sender: 'ui' }),
     });
 
-    const contentType = resp.headers.get('content-type') || '';
+    var contentType = resp.headers.get('content-type') || '';
 
     if (!resp.ok || !contentType.includes('text/event-stream')) {
-      // Fallback: try /message endpoint or show error from /stream
       removeTypingIndicator();
       try {
-        const data = await resp.json();
-        if (data.error) {
-          addChatBubble('assistant', '⚠️ ' + data.error);
-        } else {
-          addChatBubble('assistant', data.response || 'No response');
-          chatHistory.push({ role: 'assistant', content: data.response || '' });
-        }
-      } catch (_) {
-        // /stream returned non-JSON — fall back to /message
-        const resp2 = await fetch(BASE + '/api/v1/message', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: msg, sender: 'ui' }),
-        });
-        const data2 = await resp2.json();
-        if (data2.error) {
-          addChatBubble('assistant', '⚠️ ' + data2.error);
-        } else {
-          addChatBubble('assistant', data2.response || 'No response');
-          chatHistory.push({ role: 'assistant', content: data2.response || '' });
-        }
+        var data = await resp.json();
+        if (data.error) { addChatBubble('assistant', '⚠️ ' + data.error); }
+        else { addChatBubble('assistant', data.response || 'No response'); chatHistory.push({ role: 'assistant', content: data.response || '' }); }
+      } catch (fallbackErr) {
+        var resp2 = await fetch(BASE + '/api/v1/message', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: msg, sender: 'ui' }) });
+        var data2 = await resp2.json();
+        if (data2.error) { addChatBubble('assistant', '⚠️ ' + data2.error); }
+        else { addChatBubble('assistant', data2.response || 'No response'); chatHistory.push({ role: 'assistant', content: data2.response || '' }); }
       }
       return;
     }
 
     removeTypingIndicator();
-    let fullText = '';
-    let bubble = null;
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+    var fullText = '';
+    var bubble = null;
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
 
     while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      var lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
-      for (const line of lines) {
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
         if (line.startsWith('data:')) {
           try {
-            const payload = JSON.parse(line.slice(5).trim());
-            if (payload.type === 'token') {
+            var payload = JSON.parse(line.slice(5).trim());
+            if (payload.type === 'delta') {
               fullText += payload.data;
               if (!bubble) bubble = addChatBubble('assistant', fullText, true);
               else bubble.innerHTML = formatMsg(fullText);
-              document.getElementById('chat-messages').scrollTop = 999999;
+              var chatBox = document.getElementById('chat-messages');
+              chatBox.scrollTo({ top: chatBox.scrollHeight, behavior: 'smooth' });
             } else if (payload.type === 'tool_start') {
               fullText += '\n🔧 *Using ' + (payload.tool_name || 'tool') + '…*\n';
               if (bubble) bubble.innerHTML = formatMsg(fullText);
@@ -276,9 +587,7 @@ async function sendMessage(e) {
               if (!bubble) addChatBubble('assistant', '⚠️ ' + payload.data);
               else { fullText += '\n⚠️ ' + payload.data; bubble.innerHTML = formatMsg(fullText); }
             }
-              if (bubble) bubble.innerHTML = formatMsg(fullText);
-            }
-          } catch (_) {}
+          } catch (parseErr) {}
         }
       }
     }
@@ -289,41 +598,92 @@ async function sendMessage(e) {
   } finally {
     streaming = false;
     document.getElementById('send-btn').disabled = false;
+    document.getElementById('send-text').textContent = 'Send';
     document.getElementById('chat-input').focus();
   }
 }
 
 function clearChat() {
   chatHistory = [];
-  document.getElementById('chat-messages').innerHTML = '';
+  var container = document.getElementById('chat-messages');
+  container.innerHTML = '<div id="chat-welcome" class="flex items-center justify-center h-full">' +
+    '<div class="text-center max-w-md">' +
+    '<div class="text-4xl mb-3">&#x1F916;</div>' +
+    '<h3 class="text-lg font-semibold text-gray-300 mb-1">Welcome to databot</h3>' +
+    '<p class="text-sm text-gray-500">Ask me anything about your data, pipelines, or infrastructure.</p>' +
+    '<div class="mt-4 flex flex-wrap gap-2 justify-center">' +
+    '<button onclick="quickPrompt(\'Show me active Airflow DAGs\')" class="text-xs px-3 py-1.5 rounded-full bg-surface-card border border-surface-border hover:border-brand-500 text-gray-400 hover:text-brand-400 transition-colors">Show me active Airflow DAGs</button>' +
+    '<button onclick="quickPrompt(\'List database tables\')" class="text-xs px-3 py-1.5 rounded-full bg-surface-card border border-surface-border hover:border-brand-500 text-gray-400 hover:text-brand-400 transition-colors">List database tables</button>' +
+    '<button onclick="quickPrompt(\'What tools are available?\')" class="text-xs px-3 py-1.5 rounded-full bg-surface-card border border-surface-border hover:border-brand-500 text-gray-400 hover:text-brand-400 transition-colors">What tools are available?</button>' +
+    '</div></div></div>';
+  showToast('Chat cleared', 'info');
+}
+
+function exportChat() {
+  if (!chatHistory.length) { showToast('No messages to export', 'warning'); return; }
+  var md = '# databot Chat Export\n\n';
+  md += '_Exported: ' + new Date().toLocaleString() + '_\n\n---\n\n';
+  chatHistory.forEach(function(m) { md += '**' + (m.role === 'user' ? 'You' : 'databot') + ':** ' + m.content + '\n\n'; });
+  var blob = new Blob([md], { type: 'text/markdown' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'databot-chat-' + new Date().toISOString().slice(0, 10) + '.md';
+  a.click();
+  showToast('Chat exported', 'success');
 }
 
 // ---------------------------------------------------------------------------
 // Sessions
 // ---------------------------------------------------------------------------
 async function loadSessions() {
-  const el = document.getElementById('sessions-list');
+  var el = document.getElementById('sessions-list');
   el.innerHTML = '<p class="text-gray-500 text-sm">Loading…</p>';
   try {
-    const r = await fetch(BASE + '/api/v1/sessions');
-    const d = await r.json();
-    if (!d.sessions?.length) { el.innerHTML = '<p class="text-gray-500 text-sm">No sessions yet.</p>'; return; }
-    el.innerHTML = d.sessions.map(s => `
-      <div class="bg-surface-card border border-surface-border rounded-lg p-3 mb-2 flex items-center justify-between">
-        <div>
-          <div class="text-sm font-medium text-gray-200">${esc(s.key || s.session_key || '')}</div>
-          <div class="text-xs text-gray-500">${s.message_count || 0} messages · ${s.last_active || ''}</div>
-        </div>
-        <button onclick="deleteSession('${esc(s.key || s.session_key || '')}')"
-          class="text-xs text-red-400 hover:text-red-300 px-2 py-1">Delete</button>
-      </div>
-    `).join('');
+    var r = await fetch(BASE + '/api/v1/sessions');
+    var d = await r.json();
+    document.getElementById('sessions-count').textContent = (d.sessions ? d.sessions.length : 0) + ' sessions';
+    if (!d.sessions || !d.sessions.length) {
+      el.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500 text-sm"><div class="text-center"><div class="text-3xl mb-2">&#x1F4AD;</div>No sessions yet. Start chatting!</div></div>';
+      return;
+    }
+    el.innerHTML = d.sessions.map(function(s) {
+      var key = s.key || s.session_key || '';
+      return '<div class="bg-surface-card border border-surface-border rounded-lg p-3 mb-2 flex items-center justify-between hover:border-surface-hover transition-colors slide-in cursor-pointer" onclick="viewSession(\'' + esc(key) + '\')">' +
+        '<div class="min-w-0 flex-1">' +
+        '<div class="text-sm font-medium text-gray-200 truncate">' + esc(key) + '</div>' +
+        '<div class="text-xs text-gray-500 mt-0.5">' + (s.message_count || 0) + ' messages &middot; ' + formatTimestamp(s.updated_at || s.last_active || '') + '</div>' +
+        '</div>' +
+        '<div class="flex items-center gap-1 ml-2 shrink-0">' +
+        '<button onclick="event.stopPropagation();deleteSession(\'' + esc(key) + '\')" class="text-xs text-red-400/60 hover:text-red-400 px-2 py-1 rounded hover:bg-red-400/10 transition-colors">&#x1F5D1;</button>' +
+        '</div></div>';
+    }).join('');
   } catch (e) { el.innerHTML = '<p class="text-red-400 text-sm">Failed to load sessions.</p>'; }
 }
+
+async function viewSession(key) {
+  document.getElementById('session-modal').classList.remove('hidden');
+  document.getElementById('session-modal-title').textContent = 'Session: ' + key;
+  var body = document.getElementById('session-modal-body');
+  body.innerHTML = '<p class="text-gray-500 text-sm">Loading…</p>';
+  try {
+    var r = await fetch(BASE + '/api/v1/sessions/' + encodeURIComponent(key));
+    var d = await r.json();
+    if (!d.messages || !d.messages.length) { body.innerHTML = '<p class="text-gray-500 text-sm">Empty session.</p>'; return; }
+    body.innerHTML = d.messages.map(function(m) {
+      return '<div class="flex ' + (m.role === 'user' ? 'justify-end' : 'justify-start') + '">' +
+        '<div class="max-w-[80%] rounded-lg px-3 py-2 text-sm ' +
+        (m.role === 'user' ? 'bg-brand-600/20 text-brand-200 border border-brand-600/30' : 'bg-surface border border-surface-border text-gray-300') + '">' +
+        formatMsg(m.content) + '</div></div>';
+    }).join('');
+  } catch (e) { body.innerHTML = '<p class="text-red-400 text-sm">Failed to load session.</p>'; }
+}
+
+function closeSessionModal() { document.getElementById('session-modal').classList.add('hidden'); }
 
 async function deleteSession(key) {
   if (!confirm('Delete session "' + key + '"?')) return;
   await fetch(BASE + '/api/v1/sessions/' + encodeURIComponent(key), { method: 'DELETE' });
+  showToast('Session deleted', 'info');
   loadSessions();
 }
 
@@ -331,136 +691,613 @@ async function deleteSession(key) {
 // Skills
 // ---------------------------------------------------------------------------
 async function loadSkills() {
-  const el = document.getElementById('skills-list');
+  var el = document.getElementById('skills-list');
   el.innerHTML = '<p class="text-gray-500 text-sm">Loading…</p>';
   try {
-    const r = await fetch(BASE + '/api/v1/skills');
-    const d = await r.json();
-    if (!d.skills?.length) { el.innerHTML = '<p class="text-gray-500 text-sm">No skills defined.</p>'; return; }
-    el.innerHTML = d.skills.map(s => `
-      <div class="bg-surface-card border border-surface-border rounded-lg p-3 mb-2 flex items-center justify-between">
-        <div class="flex-1">
-          <div class="flex items-center gap-2">
-            <span class="text-sm font-medium text-gray-200">${esc(s.label)}</span>
-            ${s.requires_extra ? '<span class="text-[10px] bg-surface-hover text-gray-400 px-1.5 py-0.5 rounded">extra: ' + esc(s.requires_extra) + '</span>' : ''}
-          </div>
-          <div class="text-xs text-gray-500 mt-0.5">${esc(s.description)}</div>
-          <div class="text-xs text-gray-600 mt-0.5">Tools: ${s.tools.map(t => '<code class="text-xs">' + esc(t) + '</code>').join(', ')}</div>
-        </div>
-        <label class="relative inline-flex items-center cursor-pointer ml-4">
-          <input type="checkbox" class="sr-only peer" ${s.enabled ? 'checked' : ''}
-            onchange="toggleSkill('${esc(s.name)}', this.checked)" />
-          <div class="w-9 h-5 bg-surface-hover peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full
-            after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-gray-400 after:rounded-full
-            after:h-4 after:w-4 after:transition-all peer-checked:bg-brand-600 peer-checked:after:bg-white"></div>
-        </label>
-      </div>
-    `).join('');
+    var r = await fetch(BASE + '/api/v1/skills');
+    var d = await r.json();
+    if (!d.skills || !d.skills.length) { el.innerHTML = '<p class="text-gray-500 text-sm">No skills defined.</p>'; return; }
+    el.innerHTML = d.skills.map(function(s) {
+      return '<div class="bg-surface-card border border-surface-border rounded-lg p-3.5 mb-2 flex items-center justify-between hover:border-surface-hover transition-colors slide-in">' +
+        '<div class="flex-1 min-w-0">' +
+        '<div class="flex items-center gap-2 flex-wrap">' +
+        '<span class="text-sm font-medium text-gray-200">' + esc(s.label) + '</span>' +
+        (s.requires_extra ? '<span class="text-[10px] bg-accent-purple/20 text-accent-purple px-1.5 py-0.5 rounded">requires: ' + esc(s.requires_extra) + '</span>' : '') +
+        '</div>' +
+        '<div class="text-xs text-gray-500 mt-1">' + esc(s.description) + '</div>' +
+        '<div class="text-xs text-gray-600 mt-1 flex flex-wrap gap-1">' + s.tools.map(function(t) { return '<span class="bg-surface-hover px-1.5 py-0.5 rounded">' + esc(t) + '</span>'; }).join('') + '</div>' +
+        '</div>' +
+        '<label class="toggle-switch ml-4 shrink-0">' +
+        '<input type="checkbox" ' + (s.enabled ? 'checked' : '') + ' onchange="toggleSkill(\'' + esc(s.name) + '\', this.checked)" />' +
+        '<span class="toggle-slider"></span>' +
+        '</label></div>';
+    }).join('');
   } catch (e) { el.innerHTML = '<p class="text-red-400 text-sm">Failed to load skills.</p>'; }
 }
 
 async function toggleSkill(name, enabled) {
   try {
-    await fetch(BASE + '/api/v1/skills/' + name, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled }),
-    });
-  } catch (_) {}
+    await fetch(BASE + '/api/v1/skills/' + name, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: enabled }) });
+    showToast('Skill "' + name + '" ' + (enabled ? 'enabled' : 'disabled'), 'success');
+  } catch (err) { showToast('Failed to update skill', 'error'); }
 }
 
 // ---------------------------------------------------------------------------
 // Tools
 // ---------------------------------------------------------------------------
 async function loadTools() {
-  const el = document.getElementById('tools-list');
+  var el = document.getElementById('tools-list');
   el.innerHTML = '<p class="text-gray-500 text-sm">Loading…</p>';
   try {
-    const r = await fetch(BASE + '/api/v1/tools');
-    const d = await r.json();
-    if (!d.tools?.length) { el.innerHTML = '<p class="text-gray-500 text-sm">No tools registered.</p>'; return; }
-    el.innerHTML = d.tools.map(t => `
-      <div class="bg-surface-card border border-surface-border rounded-lg p-3 mb-2">
-        <div class="text-sm font-medium text-brand-400">${esc(t.name)}</div>
-        <div class="text-xs text-gray-400 mt-1">${esc(t.description || '')}</div>
-      </div>
-    `).join('');
+    var r = await fetch(BASE + '/api/v1/tools');
+    var d = await r.json();
+    allTools = d.tools || [];
+    renderTools(allTools);
   } catch (e) { el.innerHTML = '<p class="text-red-400 text-sm">Failed to load tools.</p>'; }
+}
+
+function renderTools(toolsList) {
+  var el = document.getElementById('tools-list');
+  if (!toolsList || !toolsList.length) { el.innerHTML = '<p class="text-gray-500 text-sm">No tools registered.</p>'; return; }
+  el.innerHTML = toolsList.map(function(t) {
+    var params = t.parameters && t.parameters.properties ? Object.keys(t.parameters.properties) : [];
+    var required = t.parameters && t.parameters.required ? t.parameters.required : [];
+    return '<div class="bg-surface-card border border-surface-border rounded-lg p-3.5 mb-2 hover:border-surface-hover transition-colors slide-in">' +
+      '<div class="flex items-start justify-between">' +
+      '<div class="text-sm font-medium text-brand-400">' + esc(t.name) + '</div>' +
+      (params.length ? '<span class="text-[10px] bg-surface-hover text-gray-400 px-1.5 py-0.5 rounded shrink-0">' + params.length + ' params</span>' : '') +
+      '</div>' +
+      '<div class="text-xs text-gray-400 mt-1.5">' + esc(t.description || 'No description') + '</div>' +
+      (params.length ? '<div class="mt-2 flex flex-wrap gap-1">' + params.map(function(p) {
+        var isReq = required.indexOf(p) !== -1;
+        return '<span class="text-[10px] px-1.5 py-0.5 rounded ' + (isReq ? 'bg-brand-600/20 text-brand-300' : 'bg-surface-hover text-gray-500') + '">' + esc(p) + (isReq ? '*' : '') + '</span>';
+      }).join('') + '</div>' : '') +
+      '</div>';
+  }).join('');
+}
+
+function filterTools() {
+  var q = document.getElementById('tools-search').value.toLowerCase();
+  var filtered = allTools.filter(function(t) {
+    return t.name.toLowerCase().indexOf(q) !== -1 || (t.description || '').toLowerCase().indexOf(q) !== -1;
+  });
+  renderTools(filtered);
 }
 
 // ---------------------------------------------------------------------------
 // Connectors
 // ---------------------------------------------------------------------------
 async function loadConnectors() {
-  const el = document.getElementById('connectors-list');
+  var el = document.getElementById('connectors-list');
   el.innerHTML = '<p class="text-gray-500 text-sm">Loading…</p>';
   try {
-    const r = await fetch(BASE + '/api/v1/connectors');
-    const d = await r.json();
-    if (!d.connectors?.length) { el.innerHTML = '<p class="text-gray-500 text-sm">No connectors configured.</p>'; return; }
-    el.innerHTML = d.connectors.map(c => `
-      <div class="bg-surface-card border border-surface-border rounded-lg p-3 mb-2 flex items-center justify-between">
-        <div>
-          <div class="text-sm font-medium text-gray-200">${esc(c.name)}</div>
-          <div class="text-xs text-gray-500">${esc(c.type)}</div>
-        </div>
-        <span class="text-xs px-2 py-0.5 rounded ${c.connected ? 'bg-green-900/40 text-green-400' : 'bg-red-900/40 text-red-400'}">
-          ${c.connected ? 'Connected' : 'Disconnected'}
-        </span>
-      </div>
-    `).join('');
+    var r = await fetch(BASE + '/api/v1/connectors');
+    var d = await r.json();
+    if (!d.connectors || !d.connectors.length) {
+      el.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500 text-sm">' +
+        '<div class="text-center"><div class="text-3xl mb-2">&#x1F50C;</div>No connectors configured.<br><span class="text-xs text-gray-600">Add connectors in your config.yaml</span></div></div>';
+      return;
+    }
+    /* group by source */
+    var active = d.connectors.filter(function(c){ return c.source === 'active'; });
+    var config = d.connectors.filter(function(c){ return c.source === 'config'; });
+    var html = '';
+
+    /* summary bar */
+    var healthy = d.connectors.filter(function(c){ return c.status === 'healthy'; }).length;
+    var degraded = d.connectors.filter(function(c){ return c.status === 'degraded'; }).length;
+    var unreachable = d.connectors.filter(function(c){ return c.status === 'unreachable'; }).length;
+    var notCfg = d.connectors.filter(function(c){ return c.status === 'not_configured'; }).length;
+    html += '<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">' +
+      statusPill('Healthy', healthy, 'green') +
+      statusPill('Degraded', degraded, 'yellow') +
+      statusPill('Unreachable', unreachable, 'red') +
+      statusPill('Not Configured', notCfg, 'gray') +
+      '</div>';
+
+    if (active.length) {
+      html += '<h3 class="text-xs uppercase tracking-wider text-gray-500 mb-2 mt-2">Active Connectors</h3>';
+      html += active.map(connectorCard).join('');
+    }
+    if (config.length) {
+      html += '<h3 class="text-xs uppercase tracking-wider text-gray-500 mb-2 mt-4">Config-Defined (not yet connected)</h3>';
+      html += config.map(connectorCard).join('');
+    }
+    el.innerHTML = html;
   } catch (e) { el.innerHTML = '<p class="text-red-400 text-sm">Failed to load connectors.</p>'; }
+}
+
+function statusPill(label, count, color) {
+  var colors = { green:'bg-green-900/30 text-green-400 border-green-800/40', yellow:'bg-yellow-900/30 text-yellow-400 border-yellow-800/40', red:'bg-red-900/30 text-red-400 border-red-800/40', gray:'bg-gray-800/40 text-gray-400 border-gray-700/40' };
+  return '<div class="border rounded-lg px-3 py-2 text-center ' + (colors[color]||colors.gray) + '">' +
+    '<div class="text-lg font-semibold">' + count + '</div>' +
+    '<div class="text-[10px] uppercase tracking-wide">' + esc(label) + '</div></div>';
+}
+
+function statusBadge(status) {
+  var map = { healthy:['bg-green-900/30 text-green-400 border border-green-800/40','Healthy'], degraded:['bg-yellow-900/30 text-yellow-400 border border-yellow-800/40','Degraded'], unreachable:['bg-red-900/30 text-red-400 border border-red-800/40','Unreachable'], not_configured:['bg-gray-800/40 text-gray-400 border border-gray-700/40','Not Configured'] };
+  var m = map[status] || map.not_configured;
+  return '<span class="text-xs px-2 py-0.5 rounded-full ' + m[0] + '">' + m[1] + '</span>';
+}
+
+function connectorCard(c) {
+  var dotColor = c.status === 'healthy' ? 'bg-accent-green' : c.status === 'degraded' ? 'bg-yellow-400' : c.status === 'unreachable' ? 'bg-accent-red' : 'bg-gray-500';
+
+  /* capabilities */
+  var capHTML = '';
+  if (c.capabilities && c.capabilities.length) {
+    capHTML = '<div class="flex flex-wrap gap-1 mt-2">' +
+      c.capabilities.map(function(cap) {
+        return '<span class="text-[10px] px-1.5 py-0.5 rounded bg-surface-hover text-gray-400">' + esc(cap) + '</span>';
+      }).join('') + '</div>';
+  }
+
+  /* config summary */
+  var cfgHTML = '';
+  if (c.config_summary) {
+    var parts = [];
+    if (c.config_summary.driver) parts.push('<span class="text-gray-400">Driver:</span> ' + esc(c.config_summary.driver));
+    if (c.config_summary.host) parts.push('<span class="text-gray-400">Host:</span> ' + esc(c.config_summary.host));
+    if (c.config_summary.database) parts.push('<span class="text-gray-400">DB:</span> ' + esc(c.config_summary.database));
+    if (c.config_summary.base_url) parts.push('<span class="text-gray-400">URL:</span> ' + esc(c.config_summary.base_url));
+    if (c.config_summary.read_only !== undefined) parts.push('<span class="text-gray-400">Read-only:</span> ' + (c.config_summary.read_only ? 'Yes' : 'No'));
+    if (parts.length) {
+      cfgHTML = '<div class="mt-2 text-[11px] text-gray-500 space-y-0.5">' + parts.map(function(p){ return '<div>' + p + '</div>'; }).join('') + '</div>';
+    }
+  }
+
+  return '<div class="bg-surface-card border border-surface-border rounded-lg p-4 mb-2 hover:border-surface-hover transition-colors slide-in">' +
+    '<div class="flex items-start justify-between">' +
+      '<div class="flex items-center gap-3">' +
+        '<div class="w-2.5 h-2.5 rounded-full ' + dotColor + ' shrink-0 mt-1"></div>' +
+        '<div>' +
+          '<div class="text-sm font-medium text-gray-200">' + esc(c.name) + '</div>' +
+          '<div class="text-xs text-gray-500 flex items-center gap-2 mt-0.5">' +
+            '<span>' + esc(c.type) + '</span>' +
+            '<span class="text-gray-700">|</span>' +
+            '<span class="' + (c.source === 'active' ? 'text-blue-400' : 'text-gray-500') + '">' + (c.source === 'active' ? 'Active' : 'Config') + '</span>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      statusBadge(c.status) +
+    '</div>' +
+    capHTML + cfgHTML +
+  '</div>';
 }
 
 // ---------------------------------------------------------------------------
 // Status
 // ---------------------------------------------------------------------------
 async function loadStatus() {
-  const el = document.getElementById('status-content');
+  var el = document.getElementById('status-content');
   el.innerHTML = '<p class="text-gray-500 text-sm">Loading…</p>';
   try {
-    const r = await fetch(BASE + '/health');
-    const d = await r.json();
-    el.innerHTML = `
-      <div class="space-y-3">
-        <div class="bg-surface-card border border-surface-border rounded-lg p-4">
-          <div class="flex items-center gap-2 mb-2">
-            <span class="w-2 h-2 rounded-full ${d.status === 'ok' ? 'bg-green-400' : 'bg-red-400'}"></span>
-            <span class="text-sm font-medium">Gateway</span>
-          </div>
-          <div class="text-xs text-gray-500">Version: ${esc(d.version || '?')}</div>
-          <div class="text-xs text-gray-500">Status: ${esc(d.status || 'unknown')}</div>
-        </div>
-        ${d.connectors && Object.keys(d.connectors).length ? `
-        <div class="bg-surface-card border border-surface-border rounded-lg p-4">
-          <div class="text-sm font-medium mb-2">Connector Health</div>
-          ${Object.entries(d.connectors).map(([n,s]) => `
-            <div class="flex items-center justify-between text-xs py-1">
-              <span class="text-gray-300">${esc(n)}</span>
-              <span class="${s === 'healthy' ? 'text-green-400' : 'text-red-400'}">${esc(s)}</span>
-            </div>
-          `).join('')}
-        </div>` : ''}
-        ${d.skills ? `
-        <div class="bg-surface-card border border-surface-border rounded-lg p-4">
-          <div class="text-sm font-medium mb-2">Active Skills</div>
-          <div class="text-xs text-gray-400">${Array.isArray(d.skills) ? d.skills.join(', ') : JSON.stringify(d.skills)}</div>
-        </div>` : ''}
-      </div>
-    `;
+    var responses = await Promise.all([
+      fetch(BASE + '/health'),
+      fetch(BASE + '/api/v1/stats'),
+    ]);
+    var health = await responses[0].json();
+    var stats = await responses[1].json();
+
+    var connectorHTML = '';
+    if (health.connectors && Object.keys(health.connectors).length) {
+      var entries = Object.entries(health.connectors);
+      connectorHTML = '<div class="bg-surface-card border border-surface-border rounded-lg p-4 mb-3">' +
+        '<div class="text-sm font-medium mb-2">Connector Health</div>' +
+        entries.map(function(entry) {
+          return '<div class="flex items-center justify-between text-xs py-1.5 border-b border-surface-border last:border-0">' +
+            '<span class="text-gray-300">' + esc(entry[0]) + '</span>' +
+            '<span class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full ' + (entry[1] === 'healthy' ? 'bg-accent-green' : 'bg-accent-red') + '"></span>' + esc(entry[1]) + '</span></div>';
+        }).join('') + '</div>';
+    }
+
+    var skillsHTML = '';
+    if (health.skills && health.skills.length) {
+      skillsHTML = '<div class="bg-surface-card border border-surface-border rounded-lg p-4">' +
+        '<div class="text-sm font-medium mb-2">Active Skills</div>' +
+        '<div class="flex flex-wrap gap-1.5">' + health.skills.map(function(s) { return '<span class="text-xs bg-brand-600/20 text-brand-300 px-2 py-0.5 rounded-full">' + esc(s) + '</span>'; }).join('') + '</div></div>';
+    }
+
+    el.innerHTML =
+      '<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">' +
+      '<div class="stat-card bg-surface-card border border-surface-border rounded-lg p-3.5 text-center"><div class="text-2xl font-bold text-brand-400">' + (stats.sessions_count || 0) + '</div><div class="text-xs text-gray-500 mt-0.5">Sessions</div></div>' +
+      '<div class="stat-card bg-surface-card border border-surface-border rounded-lg p-3.5 text-center"><div class="text-2xl font-bold text-accent-green">' + (stats.total_messages || 0) + '</div><div class="text-xs text-gray-500 mt-0.5">Messages</div></div>' +
+      '<div class="stat-card bg-surface-card border border-surface-border rounded-lg p-3.5 text-center"><div class="text-2xl font-bold text-accent-purple">' + (stats.tools_count || 0) + '</div><div class="text-xs text-gray-500 mt-0.5">Tools</div></div>' +
+      '<div class="stat-card bg-surface-card border border-surface-border rounded-lg p-3.5 text-center"><div class="text-2xl font-bold text-accent-yellow">' + (stats.skills_enabled || 0) + '/' + (stats.skills_total || 0) + '</div><div class="text-xs text-gray-500 mt-0.5">Skills Active</div></div>' +
+      '</div>' +
+      '<div class="bg-surface-card border border-surface-border rounded-lg p-4 mb-3">' +
+      '<div class="flex items-center gap-2.5 mb-3">' +
+      '<span class="w-2.5 h-2.5 rounded-full ' + (health.status === 'ok' ? 'bg-accent-green animate-pulse' : 'bg-accent-red') + '"></span>' +
+      '<span class="text-sm font-medium">Gateway Health</span>' +
+      '<span class="text-xs text-gray-500 ml-auto">' + (health.version || '?') + '</span></div>' +
+      '<div class="grid grid-cols-2 gap-2 text-xs">' +
+      '<div class="text-gray-400">Provider</div><div class="text-gray-200">' + esc(stats.provider || '?') + '</div>' +
+      '<div class="text-gray-400">Model</div><div class="text-gray-200">' + esc(stats.model || '?') + '</div>' +
+      '<div class="text-gray-400">Connectors</div><div class="text-gray-200">' + (stats.connectors_count || 0) + '</div>' +
+      '<div class="text-gray-400">Cron Jobs</div><div class="text-gray-200">' + (stats.cron_jobs || 0) + '</div>' +
+      '</div></div>' +
+      connectorHTML + skillsHTML;
   } catch (e) { el.innerHTML = '<p class="text-red-400 text-sm">Failed to load status.</p>'; }
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+async function loadSettings() {
+  try {
+    var r = await fetch(BASE + '/api/v1/config');
+    var cfg = await r.json();
+
+    document.getElementById('cfg-provider').value = cfg.providers && cfg.providers.default ? cfg.providers.default : 'anthropic';
+    var modelName = cfg.providers && cfg.providers.models && cfg.providers.default ? cfg.providers.models[cfg.providers.default] : '—';
+    document.getElementById('cfg-model').textContent = modelName || '—';
+
+    document.getElementById('cfg-max-iter').value = cfg.agent ? cfg.agent.max_iterations || 20 : 20;
+    document.getElementById('cfg-max-msgs').value = cfg.agent ? cfg.agent.max_session_messages || 50 : 50;
+    document.getElementById('cfg-system-prompt').value = cfg.agent ? cfg.agent.system_prompt || '' : '';
+
+    document.getElementById('cfg-rate-limit').value = cfg.gateway ? cfg.gateway.rate_limit_rpm || 60 : 60;
+    document.getElementById('cfg-port').textContent = cfg.gateway ? cfg.gateway.port || 18790 : 18790;
+
+    /* Load channels from dedicated API with auth fields */
+    loadChannelsConfig();
+
+    /* Load connectors config */
+    loadConnectorsConfig();
+
+    var features = document.getElementById('cfg-features');
+    var featureList = [
+      { label: 'RAG (Retrieval-Augmented)', enabled: cfg.rag ? cfg.rag.enabled : false },
+      { label: 'Observability (OTLP)', enabled: cfg.observability ? cfg.observability.enabled : false },
+      { label: 'Embedded UI', enabled: cfg.ui ? cfg.ui.enabled : true },
+    ];
+    features.innerHTML = featureList.map(function(f) {
+      return '<div class="flex items-center justify-between py-1.5">' +
+        '<span class="text-sm text-gray-300">' + f.label + '</span>' +
+        '<span class="text-xs ' + (f.enabled ? 'text-accent-green' : 'text-gray-600') + '">' + (f.enabled ? 'Enabled' : 'Disabled') + '</span></div>';
+    }).join('');
+
+    var provider = cfg.providers && cfg.providers.default ? cfg.providers.default : '';
+    var model = cfg.providers && cfg.providers.models && cfg.providers.default ? cfg.providers.models[cfg.providers.default] || '' : '';
+    document.getElementById('chat-model-badge').textContent = provider + ' / ' + model;
+
+  } catch (e) { showToast('Failed to load settings', 'error'); }
+}
+
+async function updateSetting(key, value) {
+  try {
+    var body = {};
+    body[key] = value;
+    var r = await fetch(BASE + '/api/v1/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    var d = await r.json();
+    if (d.errors && d.errors.length) {
+      showToast(d.errors[0], 'error');
+    } else {
+      showToast('Setting updated: ' + key, 'success');
+      if (key === 'default_provider') loadSettings();
+    }
+  } catch (e) { showToast('Failed to update setting', 'error'); }
+}
+
+async function updateChannel(channel, field, value) {
+  try {
+    var channels = {};
+    channels[channel] = {};
+    channels[channel][field] = value;
+    var r = await fetch(BASE + '/api/v1/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channels: channels }),
+    });
+    var d = await r.json();
+    if (d.errors && d.errors.length) {
+      showToast(d.errors[0], 'error');
+    } else {
+      showToast(channel + '.' + field + ' updated', 'success');
+      loadChannelsConfig();
+    }
+  } catch (e) { showToast('Failed to update channel', 'error'); }
+}
+
+async function loadChannelsConfig() {
+  var chEl = document.getElementById('cfg-channels');
+  try {
+    var r = await fetch(BASE + '/api/v1/config/channels');
+    var d = await r.json();
+    var channels = d.channels || {};
+
+    var channelMeta = {
+      gchat: { label: 'Google Chat', icon: '💬',
+        fields: [
+          { key: 'mode', type: 'select', options: ['webhook','app'], label: 'Mode' },
+          { key: 'webhook_url', type: 'text', label: 'Webhook URL', placeholder: 'https://chat.googleapis.com/...' },
+          { key: 'project_id', type: 'text', label: 'Project ID', placeholder: 'my-gcp-project' },
+        ] },
+      slack: { label: 'Slack', icon: '💼',
+        fields: [
+          { key: 'bot_token', type: 'password', label: 'Bot Token', placeholder: 'xoxb-...' },
+          { key: 'default_channel', type: 'text', label: 'Default Channel', placeholder: '#general' },
+        ] },
+      discord: { label: 'Discord', icon: '🎮',
+        fields: [
+          { key: 'bot_token', type: 'password', label: 'Bot Token', placeholder: 'Bot token...' },
+          { key: 'command_prefix', type: 'text', label: 'Command Prefix', placeholder: '!' },
+        ] },
+      whatsapp: { label: 'WhatsApp', icon: '📱',
+        fields: [
+          { key: 'phone_number_id', type: 'text', label: 'Phone Number ID', placeholder: '1234567890' },
+          { key: 'access_token', type: 'password', label: 'Access Token', placeholder: 'EAAx...' },
+          { key: 'verify_token', type: 'password', label: 'Verify Token', placeholder: 'my-verify-token' },
+        ] },
+      telegram: { label: 'Telegram', icon: '✈️',
+        fields: [
+          { key: 'bot_token', type: 'password', label: 'Bot Token', placeholder: '123456:ABC-DEF...' },
+          { key: 'mode', type: 'select', options: ['polling','webhook'], label: 'Mode' },
+          { key: 'webhook_url', type: 'text', label: 'Webhook URL', placeholder: 'https://yourdomain.com/telegram/webhook' },
+        ] },
+    };
+
+    chEl.innerHTML = Object.entries(channels).map(function(entry) {
+      var name = entry[0]; var ch = entry[1];
+      var meta = channelMeta[name] || { label: name, icon: '📡', fields: [] };
+      var isOn = ch.enabled;
+
+      /* build collapsible config fields */
+      var fieldsHTML = meta.fields.map(function(f) {
+        if (f.type === 'select') {
+          return '<div><label class="text-[10px] text-gray-500 block mb-0.5">' + f.label + '</label>' +
+            '<select onchange="updateChannel(\'' + name + '\', \'' + f.key + '\', this.value)" ' +
+            'class="w-full bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-brand-500">' +
+            f.options.map(function(o){ return '<option value="' + o + '"' + (ch[f.key] === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') +
+            '</select></div>';
+        }
+        var inputType = f.type === 'password' ? 'password' : 'text';
+        var val = ch[f.key] || '';
+        return '<div><label class="text-[10px] text-gray-500 block mb-0.5">' + f.label + '</label>' +
+          '<input type="' + inputType + '" value="' + esc(val) + '" placeholder="' + (f.placeholder || '') + '" ' +
+          'onchange="updateChannel(\'' + name + '\', \'' + f.key + '\', this.value)" ' +
+          'class="w-full bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-brand-500 placeholder-gray-600" /></div>';
+      }).join('');
+
+      return '<div class="p-3 bg-surface border border-surface-border rounded-lg">' +
+        '<div class="flex items-center justify-between">' +
+          '<div class="flex items-center gap-2">' +
+            '<span>' + meta.icon + '</span>' +
+            '<span class="text-sm text-gray-200 font-medium">' + esc(meta.label) + '</span>' +
+            '<span class="w-1.5 h-1.5 rounded-full ' + (isOn ? 'bg-accent-green' : 'bg-gray-600') + '"></span>' +
+          '</div>' +
+          '<label class="relative inline-flex items-center cursor-pointer">' +
+            '<input type="checkbox" ' + (isOn ? 'checked' : '') +
+            ' onchange="updateChannel(\'' + name + '\', \'enabled\', this.checked)" class="sr-only peer">' +
+            '<div class="w-9 h-5 bg-gray-700 rounded-full peer peer-checked:bg-brand-600 ' +
+            'after:content-[\'\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full"></div>' +
+          '</label>' +
+        '</div>' +
+        /* show config fields when expanded via detail/summary */
+        '<details class="mt-2">' +
+          '<summary class="text-[10px] text-gray-500 cursor-pointer hover:text-gray-400 select-none">Configure credentials &amp; settings</summary>' +
+          '<div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">' + fieldsHTML + '</div>' +
+          '<p class="text-[9px] text-gray-600 mt-1.5">Changes are applied at runtime. Use "Save to Disk" to persist.</p>' +
+        '</details>' +
+      '</div>';
+    }).join('');
+  } catch(e) { chEl.innerHTML = '<p class="text-xs text-red-400">Failed to load channels.</p>'; }
+}
+
+async function loadConnectorsConfig() {
+  var el = document.getElementById('cfg-connectors');
+  try {
+    var r = await fetch(BASE + '/api/v1/config/connectors');
+    var d = await r.json();
+    var conns = d.connectors || {};
+    var keys = Object.keys(conns);
+    if (!keys.length) {
+      el.innerHTML = '<p class="text-xs text-gray-500">No connectors configured. Click + Add to create one.</p>';
+      return;
+    }
+    el.innerHTML = keys.map(function(name) {
+      var c = conns[name];
+      var details = [c.type];
+      if (c.driver) details.push(c.driver);
+      if (c.host) details.push(c.host + (c.port ? ':' + c.port : ''));
+      if (c.database) details.push(c.database);
+      if (c.base_url) details.push(c.base_url);
+      var eName = esc(name);
+      return '<div class="p-3 bg-surface border border-surface-border rounded-lg">' +
+        '<div class="flex items-center justify-between">' +
+          '<div>' +
+            '<div class="text-sm font-medium text-gray-200">' + eName + '</div>' +
+            '<div class="text-[11px] text-gray-500 mt-0.5">' + details.map(esc).join(' · ') + '</div>' +
+            '<div class="text-[10px] text-gray-600 mt-0.5">' + (c.read_only ? '&#x1F512; Read-only' : '&#x1F513; Read-write') + '</div>' +
+          '</div>' +
+          '<div class="flex items-center gap-1">' +
+            '<button onclick="toggleEditConnector(\'' + eName + '\')" class="text-xs text-blue-400 hover:text-blue-300 px-2 py-1 rounded hover:bg-blue-900/20 transition-colors" title="Edit">&#x270F;&#xFE0F;</button>' +
+            '<button onclick="deleteConnector(\'' + eName + '\')" class="text-xs text-red-400 hover:text-red-300 px-2 py-1 rounded hover:bg-red-900/20 transition-colors" title="Remove">&#x1F5D1;</button>' +
+          '</div>' +
+        '</div>' +
+        /* inline edit form (hidden by default) */
+        '<div id="edit-conn-' + eName + '" class="hidden mt-3 pt-3 border-t border-surface-border">' +
+          '<div class="grid grid-cols-2 gap-2">' +
+            connEditField('edit-' + eName + '-type', 'Type', c.type, 'select', ['sql','rest_api','catalog','streaming','processing']) +
+            connEditField('edit-' + eName + '-driver', 'Driver', c.driver, 'text') +
+            connEditField('edit-' + eName + '-host', 'Host', c.host, 'text') +
+            connEditField('edit-' + eName + '-port', 'Port', c.port || '', 'number') +
+            connEditField('edit-' + eName + '-database', 'Database', c.database, 'text') +
+            connEditField('edit-' + eName + '-username', 'Username', c.username || '', 'text') +
+            connEditField('edit-' + eName + '-password', 'Password', '', 'password') +
+            connEditField('edit-' + eName + '-base_url', 'Base URL', c.base_url, 'text') +
+            '<div class="flex items-end"><label class="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer">' +
+              '<input id="edit-' + eName + '-read_only" type="checkbox"' + (c.read_only ? ' checked' : '') + ' class="accent-brand-500" /> Read-only</label></div>' +
+          '</div>' +
+          '<div class="flex justify-end gap-2 mt-2">' +
+            '<button onclick="toggleEditConnector(\'' + eName + '\')" class="text-xs px-3 py-1.5 rounded bg-surface-hover text-gray-400 hover:bg-surface-border transition-colors">Cancel</button>' +
+            '<button onclick="saveEditConnector(\'' + eName + '\')" class="text-xs px-3 py-1.5 rounded bg-brand-600 hover:bg-brand-700 text-white transition-colors">Save</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  } catch (e) { el.innerHTML = '<p class="text-xs text-red-400">Failed to load connectors config.</p>'; }
+}
+
+function connEditField(id, label, value, type, options) {
+  if (type === 'select' && options) {
+    return '<div><label class="text-[10px] text-gray-500 block mb-0.5">' + label + '</label>' +
+      '<select id="' + id + '" class="w-full bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-brand-500">' +
+      options.map(function(o){ return '<option value="' + o + '"' + (value === o ? ' selected' : '') + '>' + o + '</option>'; }).join('') +
+      '</select></div>';
+  }
+  var inputType = type === 'password' ? 'password' : type === 'number' ? 'number' : 'text';
+  var placeholder = type === 'password' ? '(leave blank to keep)' : '';
+  return '<div><label class="text-[10px] text-gray-500 block mb-0.5">' + label + '</label>' +
+    '<input id="' + id + '" type="' + inputType + '" value="' + esc(String(value || '')) + '" placeholder="' + placeholder + '" ' +
+    'class="w-full bg-surface-input border border-surface-border rounded px-2 py-1.5 text-xs text-gray-200 focus:outline-none focus:border-brand-500 placeholder-gray-600" /></div>';
+}
+
+function toggleEditConnector(name) {
+  var el = document.getElementById('edit-conn-' + name);
+  if (el) el.classList.toggle('hidden');
+}
+
+async function saveEditConnector(name) {
+  var g = function(f) { var e = document.getElementById('edit-' + name + '-' + f); return e ? e.value : ''; };
+  var body = {
+    type: g('type'),
+    driver: g('driver').trim(),
+    host: g('host').trim(),
+    port: parseInt(g('port')) || 0,
+    database: g('database').trim(),
+    username: g('username').trim(),
+    base_url: g('base_url').trim(),
+    read_only: document.getElementById('edit-' + name + '-read_only').checked,
+  };
+  /* only send password if user typed something */
+  var pw = g('password').trim();
+  if (pw) body.password = pw;
+  try {
+    var r = await fetch(BASE + '/api/v1/config/connectors/' + encodeURIComponent(name), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    var d = await r.json();
+    if (d.status === 'ok') {
+      showToast('Connector "' + name + '" updated', 'success');
+      loadConnectorsConfig();
+    } else {
+      showToast('Error: ' + (d.error || 'Unknown'), 'error');
+    }
+  } catch(e) { showToast('Failed to update connector', 'error'); }
+}
+
+function showAddConnectorForm() {
+  document.getElementById('add-connector-form').classList.remove('hidden');
+}
+function hideAddConnectorForm() {
+  document.getElementById('add-connector-form').classList.add('hidden');
+}
+
+async function saveNewConnector() {
+  var name = document.getElementById('new-conn-name').value.trim();
+  if (!name) { showToast('Connector name is required', 'error'); return; }
+  var body = {
+    type: document.getElementById('new-conn-type').value,
+    driver: document.getElementById('new-conn-driver').value.trim(),
+    host: document.getElementById('new-conn-host').value.trim(),
+    port: parseInt(document.getElementById('new-conn-port').value) || 0,
+    database: document.getElementById('new-conn-database').value.trim(),
+    username: document.getElementById('new-conn-username').value.trim(),
+    password: document.getElementById('new-conn-password').value.trim(),
+    base_url: document.getElementById('new-conn-base-url').value.trim(),
+    read_only: document.getElementById('new-conn-readonly').checked,
+  };
+  try {
+    var r = await fetch(BASE + '/api/v1/config/connectors/' + encodeURIComponent(name), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    var d = await r.json();
+    if (d.status === 'ok') {
+      showToast('Connector "' + name + '" added', 'success');
+      hideAddConnectorForm();
+      /* reset form */
+      document.getElementById('new-conn-name').value = '';
+      document.getElementById('new-conn-driver').value = '';
+      document.getElementById('new-conn-host').value = '';
+      document.getElementById('new-conn-port').value = '';
+      document.getElementById('new-conn-database').value = '';
+      document.getElementById('new-conn-username').value = '';
+      document.getElementById('new-conn-password').value = '';
+      document.getElementById('new-conn-base-url').value = '';
+      document.getElementById('new-conn-readonly').checked = true;
+      loadConnectorsConfig();
+    } else {
+      showToast('Error: ' + (d.error || 'Unknown'), 'error');
+    }
+  } catch (e) { showToast('Failed to save connector', 'error'); }
+}
+
+async function deleteConnector(name) {
+  if (!confirm('Remove connector "' + name + '"?')) return;
+  try {
+    var r = await fetch(BASE + '/api/v1/config/connectors/' + encodeURIComponent(name), { method: 'DELETE' });
+    var d = await r.json();
+    if (d.status === 'ok') {
+      showToast('Connector "' + name + '" removed', 'success');
+      loadConnectorsConfig();
+    } else {
+      showToast('Error: ' + (d.error || 'Unknown'), 'error');
+    }
+  } catch (e) { showToast('Failed to delete connector', 'error'); }
+}
+
+async function saveConfigToDisk() {
+  try {
+    var r = await fetch(BASE + '/api/v1/config/save', { method: 'POST' });
+    var d = await r.json();
+    if (d.status === 'saved') showToast('Configuration saved to disk!', 'success');
+    else showToast('Save failed: ' + (d.error || 'Unknown error'), 'error');
+  } catch (e) { showToast('Failed to save config', 'error'); }
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function esc(s) { if (s == null) return ''; var d = document.createElement('div'); d.textContent = String(s); return d.innerHTML; }
+
+function formatTimestamp(ts) {
+  if (!ts) return '';
+  try {
+    var d = new Date(ts);
+    var now = new Date();
+    var diff = (now - d) / 1000;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    return d.toLocaleDateString();
+  } catch (err) { return ts; }
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeSessionModal();
+  if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+    e.preventDefault();
+    switchTab('chat');
+    document.getElementById('chat-input').focus();
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 switchTab('chat');
 document.getElementById('chat-input').focus();
+loadSettings();
 </script>
 </body>
 </html>

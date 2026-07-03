@@ -1,0 +1,40 @@
+{
+    "manifest_version": 3,
+    "name": "Databot for Google Chat",
+    "version": "1.2.0",
+    "description": "Bridges Google Chat messages to your local Databot instance for AI-powered responses.",
+    "permissions": [
+        "storage"
+    ],
+    "host_permissions": [
+        "https://chat.google.com/*",
+        "https://mail.google.com/*",
+        "http://localhost:18790/*",
+        "https://chat.googleapis.com/*"
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "https://chat.google.com/*",
+                "https://mail.google.com/*"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "run_at": "document_idle",
+            "all_frames": true
+        }
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "action": {
+        "default_popup": "popup.html",
+        "default_title": "Databot Settings"
+    },
+    "icons": {
+        "16": "icon.png",
+        "48": "icon.png",
+        "128": "icon.png"
+    }
+}

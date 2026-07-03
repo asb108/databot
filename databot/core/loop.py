@@ -11,6 +11,7 @@ from loguru import logger
 
 from databot.core.bus import InboundMessage, MessageBus, OutboundMessage, StreamEvent
 from databot.core.context import ContextBuilder
+from databot.core.tokens import fit_messages_to_budget, get_context_window
 from databot.memory.manager import MemoryManager
 from databot.providers.base import LLMProvider
 from databot.session.manager import SessionManager
@@ -44,6 +45,10 @@ class AgentLoop:
         system_prompt: str = "",
         approval_required_tools: list[str] | None = None,
         rag_context: Any | None = None,
+        usage_tracker: Any | None = None,
+        compactor: Any | None = None,
+        context_budget_ratio: float = 0.75,
+        slash_handler: Any | None = None,
     ):
         self.bus = bus
         self.provider = provider
@@ -57,6 +62,11 @@ class AgentLoop:
         self._running = False
         self._approval_required = set(approval_required_tools or [])
         self._rag_context = rag_context
+        self._usage = usage_tracker
+        self._compactor = compactor
+        self._slash = slash_handler
+        # Max input tokens to allow per LLM call (fraction of the model window).
+        self._input_budget = int(get_context_window(self.model) * context_budget_ratio)
         # Callback for tool approval — set by channel/CLI for interactive use
         self._approval_callback: callable | None = None
 
@@ -94,12 +104,69 @@ class AgentLoop:
         self._running = False
         logger.info("Agent loop stopping")
 
+    async def _maybe_compact(self, session: Any) -> None:
+        """Summarize old turns into the session summary if history is large."""
+        if not self._compactor:
+            return
+        try:
+            result = await self._compactor.compact(
+                session.get_history(), session.summary, self.model
+            )
+        except Exception as e:
+            logger.warning(f"Compaction error (ignored): {e}")
+            return
+        if result:
+            recent, summary = result
+            session.replace_history(recent)
+            session.set_summary(summary)
+            self.sessions.save(session)
+
+    def _budget_response(self, msg: InboundMessage) -> OutboundMessage | None:
+        """Return a budget-exceeded reply if the session is over budget, else None."""
+        if self._usage and self._usage.over_budget(msg.session_key):
+            return OutboundMessage(
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                content=(
+                    "This conversation has reached its configured LLM cost budget "
+                    f"(${self._usage.session_budget_usd:.2f}). Start a new session "
+                    "or raise `agent.session_cost_budget_usd` to continue."
+                ),
+            )
+        return None
+
+    def _record_usage(self, response: Any, session_key: str) -> None:
+        from databot.core.cost import record_llm_usage
+
+        record_llm_usage(self._usage, self.model, response, session_key)
+
     async def process_message(self, msg: InboundMessage) -> OutboundMessage | None:
         """Process a single inbound message through the LLM agent loop."""
         logger.info(f"Processing message from {msg.channel}:{msg.sender_id}")
 
+        from databot.observability.metrics import get_metrics
+
+        metrics = get_metrics()
+        started = asyncio.get_event_loop().time()
+
+        # Deterministic slash commands bypass the LLM entirely.
+        if self._slash:
+            handled = await self._slash.handle(msg.content, msg.session_key)
+            if handled is not None:
+                metrics.message(msg.channel, asyncio.get_event_loop().time() - started)
+                return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, content=handled)
+
         # Get or create session
         session = self.sessions.get_or_create(msg.session_key)
+
+        # Enforce per-session cost budget before spending more.
+        budget_reply = self._budget_response(msg)
+        if budget_reply:
+            metrics.message(msg.channel, asyncio.get_event_loop().time() - started)
+            return budget_reply
+
+        # Compact old history into a running summary if needed.
+        await self._maybe_compact(session)
 
         # Enrich with RAG context if available
         enriched_content = msg.content
@@ -118,6 +185,7 @@ class AgentLoop:
             channel=msg.channel,
             chat_id=msg.chat_id,
             media=msg.media if msg.media else None,
+            summary=session.summary,
         )
 
         # Agent loop: LLM <-> tool execution
@@ -127,12 +195,18 @@ class AgentLoop:
         while iteration < self.max_iterations:
             iteration += 1
 
+            # Keep the request within the model's context window.
+            messages, dropped = fit_messages_to_budget(messages, self.model, self._input_budget)
+            if dropped:
+                logger.debug(f"Trimmed {dropped} message(s) to fit context budget")
+
             # Call LLM
             response = await self.provider.chat(
                 messages=messages,
                 tools=self.tools.get_definitions() or None,
                 model=self.model,
             )
+            self._record_usage(response, msg.session_key)
 
             if response.has_tool_calls:
                 # Add assistant message with tool calls
@@ -179,6 +253,8 @@ class AgentLoop:
         session.add_message("assistant", final_content)
         self.sessions.save(session)
 
+        metrics.message(msg.channel, asyncio.get_event_loop().time() - started)
+
         return OutboundMessage(
             channel=msg.channel,
             chat_id=msg.chat_id,
@@ -200,13 +276,39 @@ class AgentLoop:
         """Process a message with streaming — yields StreamEvent for SSE delivery."""
         logger.info(f"Processing streaming message from {msg.channel}:{msg.sender_id}")
 
+        # Deterministic slash commands bypass the LLM entirely.
+        if self._slash:
+            handled = await self._slash.handle(msg.content, msg.session_key)
+            if handled is not None:
+                yield StreamEvent(
+                    channel=msg.channel,
+                    chat_id=msg.chat_id,
+                    event_type="done",
+                    data=handled,
+                )
+                return
+
         session = self.sessions.get_or_create(msg.session_key)
+
+        # Enforce per-session cost budget before spending more.
+        budget_reply = self._budget_response(msg)
+        if budget_reply:
+            yield StreamEvent(
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                event_type="done",
+                data=budget_reply.content,
+            )
+            return
+
+        await self._maybe_compact(session)
         messages = self.context.build_messages(
             history=session.get_history(),
             current_message=msg.content,
             channel=msg.channel,
             chat_id=msg.chat_id,
             media=msg.media if msg.media else None,
+            summary=session.summary,
         )
 
         iteration = 0
@@ -214,6 +316,9 @@ class AgentLoop:
 
         while iteration < self.max_iterations:
             iteration += 1
+
+            # Keep the request within the model's context window.
+            messages, _ = fit_messages_to_budget(messages, self.model, self._input_budget)
 
             # Collect streaming chunks
             text_buffer = ""
@@ -224,6 +329,8 @@ class AgentLoop:
                 tools=self.tools.get_definitions() or None,
                 model=self.model,
             ):
+                if getattr(chunk, "usage", None):
+                    self._record_usage(chunk, msg.session_key)
                 if chunk.is_tool_call:
                     args = chunk.tool_arguments_delta
                     try:

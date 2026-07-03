@@ -64,14 +64,14 @@ class TestBuildComponents:
     """Test the _build_components function returns all expected items."""
 
     def test_returns_extended_tuple(self):
-        """_build_components returns 11-element tuple with all subsystems."""
+        """_build_components returns 14-element tuple with all subsystems."""
         from databot.cli.commands import _build_components
         from databot.config.schema import DatabotConfig
 
         cfg = DatabotConfig()
         result = _build_components(cfg)
 
-        assert len(result) == 11, f"Expected 11-tuple, got {len(result)}-tuple"
+        assert len(result) == 14, f"Expected 14-tuple, got {len(result)}-tuple"
 
         (
             bus,
@@ -85,6 +85,9 @@ class TestBuildComponents:
             tracer,
             delegator,
             skill_registry,
+            usage_tracker,
+            compactor,
+            slash_handler,
         ) = result
 
         # Subsystems present
@@ -93,6 +96,8 @@ class TestBuildComponents:
         assert tools is not None
         assert workspace == Path.cwd()
         assert skill_registry is not None
+        assert usage_tracker is not None
+        assert compactor is not None  # compaction enabled by default
         # Subsystems disabled by default
         assert rag_context is None
         assert tracer is None
@@ -138,7 +143,7 @@ class TestBuildComponents:
         result = _build_components(cfg)
         # rag_context may or may not be None depending on whether chromadb is installed
         # Either way it should not raise
-        assert len(result) == 11
+        assert len(result) == 14
 
 
 class TestRegisterToolsWithConnectors:

@@ -43,6 +43,8 @@ class TelegramChannel(BaseChannel):
         bot_token: str = "",
         mode: str = "polling",
         webhook_url: str = "",
+        cfg_ref: Any | None = None,
+        loop_ref: Any | None = None,
     ):
         super().__init__(bus)
         self._bot_token = bot_token
@@ -50,6 +52,8 @@ class TelegramChannel(BaseChannel):
         self._webhook_url = webhook_url
         self._running = False
         self._poll_task: asyncio.Task | None = None
+        self._cfg_ref = cfg_ref  # live config reference for runtime updates
+        self._loop_ref = loop_ref  # AgentLoop ref for synchronous processing
 
         # Register outbound handler
         self.bus.on_outbound(self._handle_outbound)
@@ -59,15 +63,29 @@ class TelegramChannel(BaseChannel):
         return "telegram"
 
     @property
+    def bot_token(self) -> str:
+        """Return live bot token — prefer runtime config if available."""
+        if self._cfg_ref:
+            return self._cfg_ref.channels.telegram.bot_token or self._bot_token
+        return self._bot_token
+
+    @property
+    def is_enabled(self) -> bool:
+        """Check if channel is currently enabled (supports runtime toggle)."""
+        if self._cfg_ref:
+            return self._cfg_ref.channels.telegram.enabled
+        return self._running
+
+    @property
     def _api_url(self) -> str:
-        return f"{_TG_API_BASE}/bot{self._bot_token}"
+        return f"{_TG_API_BASE}/bot{self.bot_token}"
 
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     async def start(self) -> None:
-        if not self._bot_token:
+        if not self.bot_token:
             logger.warning("Telegram bot_token not configured — channel inactive")
             return
 
@@ -97,7 +115,7 @@ class TelegramChannel(BaseChannel):
 
     async def send(self, chat_id: str, content: str, thread_id: str | None = None) -> None:
         """Send a text message via the Telegram Bot API."""
-        if not self._bot_token:
+        if not self.bot_token:
             logger.warning("Telegram bot_token not configured")
             return
 
@@ -119,7 +137,7 @@ class TelegramChannel(BaseChannel):
             logger.error(f"Failed to send Telegram message: {e}")
 
     async def _handle_outbound(self, msg: OutboundMessage) -> None:
-        if msg.channel == "telegram":
+        if msg.channel == "telegram" and self.is_enabled:
             await self.send(msg.chat_id, msg.content, msg.thread_id)
 
     # ------------------------------------------------------------------
@@ -148,8 +166,14 @@ class TelegramChannel(BaseChannel):
     async def _poll_loop(self) -> None:
         """Long-poll Telegram for updates."""
         offset = 0
+        logger.info("Telegram polling loop started")
 
         while self._running:
+            # Check if still enabled via live config
+            if not self.is_enabled:
+                await asyncio.sleep(5)
+                continue
+
             try:
                 url = f"{self._api_url}/getUpdates"
                 params: dict[str, Any] = {"timeout": 30, "offset": offset}
@@ -158,6 +182,11 @@ class TelegramChannel(BaseChannel):
                     resp = await client.get(url, params=params)
                     resp.raise_for_status()
                     data = resp.json()
+
+                if not data.get("ok"):
+                    logger.error(f"Telegram getUpdates error: {data}")
+                    await asyncio.sleep(5)
+                    continue
 
                 for update in data.get("result", []):
                     offset = update["update_id"] + 1
@@ -170,7 +199,7 @@ class TelegramChannel(BaseChannel):
                 await asyncio.sleep(5)
 
     async def _process_update(self, update: dict) -> None:
-        """Extract text from a Telegram update and publish to the bus."""
+        """Extract text from a Telegram update and process it."""
         message = update.get("message") or update.get("edited_message")
         if not message:
             return
@@ -181,14 +210,37 @@ class TelegramChannel(BaseChannel):
 
         chat = message.get("chat", {})
         sender = message.get("from", {})
+        chat_id = str(chat.get("id", "unknown"))
 
         inbound = InboundMessage(
             channel="telegram",
             sender_id=str(sender.get("id", "unknown")),
-            chat_id=str(chat.get("id", "unknown")),
+            chat_id=chat_id,
             content=text,
         )
-        await self.bus.publish_inbound(inbound)
+
+        # Process via agent loop directly and send response via Bot API
+        if self._loop_ref:
+            try:
+                outbound = await asyncio.wait_for(
+                    self._loop_ref.process_message(inbound),
+                    timeout=120.0,  # Telegram has no sync response limit
+                )
+                if outbound and outbound.content:
+                    await self.send(chat_id, outbound.content)
+                else:
+                    await self.send(chat_id, "I processed your request but had no output.")
+            except asyncio.TimeoutError:
+                logger.warning(f"Telegram: agent loop timed out for chat {chat_id}")
+                await self.send(
+                    chat_id, "Sorry, your request timed out. Please try a simpler query."
+                )
+            except Exception as e:
+                logger.error(f"Telegram: error processing message: {e}")
+                await self.send(chat_id, "Sorry, I encountered an error processing your request.")
+        else:
+            # Fallback: publish to bus (async)
+            await self.bus.publish_inbound(inbound)
 
     # ------------------------------------------------------------------
     # FastAPI webhook routes
@@ -201,6 +253,14 @@ class TelegramChannel(BaseChannel):
         @router.post("/webhooks/telegram")
         async def telegram_webhook(request: Request):
             """Handle incoming Telegram updates via webhook."""
+            if not self.is_enabled:
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse(
+                    {"error": "Telegram channel is not enabled"},
+                    status_code=403,
+                )
+
             update = await request.json()
             await self._process_update(update)
             return {"ok": True}

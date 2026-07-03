@@ -17,8 +17,8 @@ Configuration example in ``config.yaml``::
 
 from __future__ import annotations
 
-import hmac
 import hashlib
+import hmac
 from typing import Any
 
 import httpx
@@ -100,6 +100,22 @@ class WhatsAppChannel(BaseChannel):
         if msg.channel == "whatsapp":
             await self.send(msg.chat_id, msg.content, msg.thread_id)
 
+    def _verify_signature(self, raw_body: bytes, signature_header: str) -> bool:
+        """Verify Meta's ``X-Hub-Signature-256`` header.
+
+        The header is ``sha256=<hex>`` where ``<hex>`` is the HMAC-SHA256 of the
+        raw request body keyed by the app secret. When no ``app_secret`` is
+        configured, verification is skipped (so existing setups keep working) —
+        configure ``app_secret`` to enforce it.
+        """
+        if not self._app_secret:
+            return True
+        if not signature_header.startswith("sha256="):
+            return False
+        expected = hmac.new(self._app_secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+        provided = signature_header[len("sha256=") :]
+        return hmac.compare_digest(expected, provided)
+
     # ------------------------------------------------------------------
     # FastAPI webhook routes
     # ------------------------------------------------------------------
@@ -129,6 +145,14 @@ class WhatsAppChannel(BaseChannel):
         @router.post("/webhooks/whatsapp")
         async def whatsapp_webhook(request: Request):
             """Handle incoming WhatsApp messages."""
+            raw = await request.body()
+            signature = request.headers.get("X-Hub-Signature-256", "")
+            if not self._verify_signature(raw, signature):
+                from fastapi.responses import JSONResponse
+
+                logger.warning("WhatsApp webhook signature verification failed")
+                return JSONResponse({"error": "invalid signature"}, status_code=403)
+
             body = await request.json()
 
             # Process each entry / change

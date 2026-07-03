@@ -48,8 +48,12 @@ class ProvidersConfig(BaseModel):
     deepseek: ProviderConfig = Field(default_factory=lambda: ProviderConfig(model="deepseek-chat"))
     gemini: ProviderConfig = Field(default_factory=lambda: ProviderConfig(model="gemini-2.0-flash"))
     qwen: ProviderConfig = Field(default_factory=lambda: ProviderConfig(model="qwen-turbo"))
-    mistral: ProviderConfig = Field(default_factory=lambda: ProviderConfig(model="mistral-large-latest"))
-    groq: ProviderConfig = Field(default_factory=lambda: ProviderConfig(model="llama-3.3-70b-versatile"))
+    mistral: ProviderConfig = Field(
+        default_factory=lambda: ProviderConfig(model="mistral-large-latest")
+    )
+    groq: ProviderConfig = Field(
+        default_factory=lambda: ProviderConfig(model="llama-3.3-70b-versatile")
+    )
     custom: dict[str, ProviderConfig] = Field(default_factory=dict)
 
 
@@ -155,6 +159,18 @@ class DataQualityToolConfig(BaseModel):
     enabled: bool = True
 
 
+class TicketToolConfig(BaseModel):
+    api_url: str = ""
+    api_token: str = ""
+    system_type: str = "mock"
+
+
+class DbtToolConfig(BaseModel):
+    enabled: bool = False
+    project_dir: str = ""
+    manifest_path: str = ""  # defaults to <project_dir>/target/manifest.json
+
+
 class ToolsConfig(BaseModel):
     sql: SQLToolConfig = Field(default_factory=SQLToolConfig)
     airflow: AirflowToolConfig = Field(default_factory=AirflowToolConfig)
@@ -162,6 +178,8 @@ class ToolsConfig(BaseModel):
     shell: ShellToolConfig = Field(default_factory=ShellToolConfig)
     web: WebToolConfig = Field(default_factory=WebToolConfig)
     data_quality: DataQualityToolConfig = Field(default_factory=DataQualityToolConfig)
+    ticket: TicketToolConfig = Field(default_factory=TicketToolConfig)
+    dbt: DbtToolConfig = Field(default_factory=DbtToolConfig)
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +251,10 @@ class RAGConfig(BaseModel):
     api_key: str = ""
     max_context_docs: int = 5
     max_context_chars: int = 4000
+    max_distance: float = Field(
+        default=0.0,
+        description="Max vector distance to keep a doc (0 disables; ~0.6 filters weak matches).",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -244,6 +266,10 @@ class ObservabilityConfig(BaseModel):
     enabled: bool = False
     service_name: str = "databot"
     otlp_endpoint: str = ""
+    metrics_enabled: bool = Field(
+        default=True,
+        description="Expose Prometheus metrics at /metrics (needs prometheus_client).",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -281,6 +307,10 @@ class CronConfig(BaseModel):
 class SecurityConfig(BaseModel):
     restrict_to_workspace: bool = True
     allowed_commands: list[str] = Field(default_factory=list)
+    audit_log: bool = Field(
+        default=True,
+        description="Record every tool execution to an append-only audit log.",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +365,31 @@ class AgentConfig(BaseModel):
     tool_approval_required: list[str] = Field(
         default_factory=list,
         description="Tool names that require human approval before execution.",
+    )
+    # --- Context & cost intelligence ---
+    prompt_caching: bool = Field(
+        default=True,
+        description="Enable Anthropic prompt caching for the stable system/tool prefix.",
+    )
+    context_budget_ratio: float = Field(
+        default=0.75,
+        description="Fraction of the model context window usable for input tokens.",
+    )
+    compaction_enabled: bool = Field(
+        default=True,
+        description="Summarize old conversation turns instead of dropping them.",
+    )
+    compaction_trigger_tokens: int = Field(
+        default=6000,
+        description="Compact history once it grows beyond this many tokens.",
+    )
+    compaction_keep_recent_messages: int = Field(
+        default=12,
+        description="Number of most-recent messages kept verbatim during compaction.",
+    )
+    session_cost_budget_usd: float = Field(
+        default=0.0,
+        description="Per-session LLM spend cap in USD (0 disables enforcement).",
     )
 
 

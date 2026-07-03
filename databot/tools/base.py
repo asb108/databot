@@ -76,21 +76,37 @@ class ToolRegistry:
 
     async def execute(self, name: str, arguments: dict[str, Any]) -> str:
         """Execute a tool by name with timeout enforcement."""
+        from databot.audit import get_audit_log
+        from databot.observability.metrics import get_metrics
+
+        metrics = get_metrics()
+        audit = get_audit_log()
         tool = self._tools.get(name)
         if not tool:
+            metrics.tool_call(name, "unknown")
+            audit.record(name, arguments, "unknown")
             return f"Error: Unknown tool '{name}'"
 
         timeout = tool.timeout if tool.timeout is not None else self._default_timeout
 
+        loop = asyncio.get_event_loop()
+        start = loop.time()
+        status = "ok"
         try:
             result = await asyncio.wait_for(tool.execute(**arguments), timeout=timeout)
             return result
         except asyncio.TimeoutError:
             logger.error(f"Tool '{name}' timed out after {timeout}s")
+            status = "timeout"
             return f"Error: Tool '{name}' timed out after {timeout} seconds."
         except Exception as e:
             logger.error(f"Tool '{name}' failed: {e}")
+            status = "error"
             return f"Error executing tool '{name}': {str(e)}"
+        finally:
+            elapsed = loop.time() - start
+            metrics.tool_call(name, status, elapsed)
+            audit.record(name, arguments, status, duration_ms=int(elapsed * 1000))
 
     def load_plugins(self, **kwargs: Any) -> int:
         """Load and register tools from entry points.

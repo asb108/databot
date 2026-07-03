@@ -18,6 +18,11 @@ from databot.connectors.base import (
     ConnectorStatus,
     ConnectorType,
 )
+from databot.connectors.identifiers import (
+    IdentifierError,
+    quote_identifier,
+    validate_identifier,
+)
 
 # Forbidden SQL keywords for write operations
 _FORBIDDEN_KEYWORDS = {
@@ -143,50 +148,95 @@ class SQLConnector(BaseConnector):
     ) -> ConnectorResult:
         """List tables in a database/schema."""
         driver = self._driver
-        if driver in ("mysql", "starrocks", "clickhouse"):
-            db = database or self._config.get("database", "")
-            if db:
-                return await self._run_query(f"SHOW TABLES FROM `{db}`", self._max_rows)
-            return await self._run_query("SHOW TABLES", self._max_rows)
-        elif driver in ("trino", "presto"):
-            catalog = database or self._config.get("catalog", "")
-            sch = schema or self._config.get("schema_name", "")
-            target = f'"{catalog}"."{sch}"' if catalog and sch else ""
-            q = f"SHOW TABLES FROM {target}" if target else "SHOW TABLES"
-            return await self._run_query(q, self._max_rows)
-        else:
-            db = database or self._config.get("database", "")
-            sch = schema or self._config.get("schema_name", "public")
-            return await self._run_query(
-                f"SELECT table_name FROM information_schema.tables "
-                f"WHERE table_schema = '{sch}' ORDER BY table_name",
-                self._max_rows,
-            )
+        try:
+            if driver in ("mysql", "starrocks", "clickhouse"):
+                db = database or self._config.get("database", "")
+                if db:
+                    db_q = quote_identifier(db, driver, "database", allow_qualified=False)
+                    return await self._run_query(f"SHOW TABLES FROM {db_q}", self._max_rows)
+                return await self._run_query("SHOW TABLES", self._max_rows)
+            elif driver in ("trino", "presto"):
+                catalog = database or self._config.get("catalog", "")
+                sch = schema or self._config.get("schema_name", "")
+                if catalog and sch:
+                    cat_q = quote_identifier(catalog, driver, "catalog", allow_qualified=False)
+                    sch_q = quote_identifier(sch, driver, "schema", allow_qualified=False)
+                    q = f"SHOW TABLES FROM {cat_q}.{sch_q}"
+                else:
+                    q = "SHOW TABLES"
+                return await self._run_query(q, self._max_rows)
+            elif driver in ("sqlite", "duckdb"):
+                # SQLite has no information_schema; duckdb shares the catalog view.
+                return await self._run_query(
+                    "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
+                    if driver == "sqlite"
+                    else "SELECT table_name FROM information_schema.tables ORDER BY table_name",
+                    self._max_rows,
+                )
+            else:
+                sch = schema or self._config.get("schema_name", "public")
+                # Validated identifier used as a string literal in the predicate.
+                sch_lit = validate_identifier(sch, "schema", allow_qualified=False)
+                return await self._run_query(
+                    f"SELECT table_name FROM information_schema.tables "
+                    f"WHERE table_schema = '{sch_lit}' ORDER BY table_name",
+                    self._max_rows,
+                )
+        except IdentifierError as e:
+            return ConnectorResult(success=False, error=str(e))
 
     async def _op_get_schema(
         self, table: str, database: str = "", schema: str = "", **kwargs: Any
     ) -> ConnectorResult:
         """Get column definitions for a table."""
         driver = self._driver
-        if driver in ("mysql", "starrocks", "clickhouse"):
-            db = database or self._config.get("database", "")
-            fqn = f"`{db}`.`{table}`" if db else f"`{table}`"
-            return await self._run_query(f"DESCRIBE {fqn}", self._max_rows)
-        elif driver in ("trino", "presto"):
-            catalog = database or self._config.get("catalog", "")
-            sch = schema or self._config.get("schema_name", "")
-            fqn = f'"{catalog}"."{sch}"."{table}"' if catalog and sch else f'"{table}"'
-            return await self._run_query(f"DESCRIBE {fqn}", self._max_rows)
-        else:
-            db = database or self._config.get("database", "")
-            sch = schema or self._config.get("schema_name", "public")
-            return await self._run_query(
-                f"SELECT column_name, data_type, is_nullable, column_default "
-                f"FROM information_schema.columns "
-                f"WHERE table_schema = '{sch}' AND table_name = '{table}' "
-                f"ORDER BY ordinal_position",
-                self._max_rows,
-            )
+        try:
+            if driver in ("mysql", "starrocks", "clickhouse"):
+                db = database or self._config.get("database", "")
+                tbl_q = quote_identifier(table, driver, "table", allow_qualified=False)
+                if db:
+                    db_q = quote_identifier(db, driver, "database", allow_qualified=False)
+                    fqn = f"{db_q}.{tbl_q}"
+                else:
+                    fqn = tbl_q
+                return await self._run_query(f"DESCRIBE {fqn}", self._max_rows)
+            elif driver in ("trino", "presto"):
+                catalog = database or self._config.get("catalog", "")
+                sch = schema or self._config.get("schema_name", "")
+                tbl_q = quote_identifier(table, driver, "table", allow_qualified=False)
+                if catalog and sch:
+                    cat_q = quote_identifier(catalog, driver, "catalog", allow_qualified=False)
+                    sch_q = quote_identifier(sch, driver, "schema", allow_qualified=False)
+                    fqn = f"{cat_q}.{sch_q}.{tbl_q}"
+                else:
+                    fqn = tbl_q
+                return await self._run_query(f"DESCRIBE {fqn}", self._max_rows)
+            elif driver == "sqlite":
+                # SQLite has no information_schema. Use the table-valued
+                # pragma_table_info function and alias its columns to the same
+                # (column_name, data_type, is_nullable) shape as the generic
+                # path, so downstream consumers (e.g. text_to_sql) parse it the
+                # same way regardless of engine.
+                tbl_lit = validate_identifier(table, "table", allow_qualified=False)
+                return await self._run_query(
+                    "SELECT name AS column_name, type AS data_type, "
+                    "CASE WHEN \"notnull\" = 0 THEN 'YES' ELSE 'NO' END AS is_nullable "
+                    f"FROM pragma_table_info('{tbl_lit}')",
+                    self._max_rows,
+                )
+            else:
+                sch = schema or self._config.get("schema_name", "public")
+                sch_lit = validate_identifier(sch, "schema", allow_qualified=False)
+                tbl_lit = validate_identifier(table, "table", allow_qualified=False)
+                return await self._run_query(
+                    f"SELECT column_name, data_type, is_nullable, column_default "
+                    f"FROM information_schema.columns "
+                    f"WHERE table_schema = '{sch_lit}' AND table_name = '{tbl_lit}' "
+                    f"ORDER BY ordinal_position",
+                    self._max_rows,
+                )
+        except IdentifierError as e:
+            return ConnectorResult(success=False, error=str(e))
 
     # ------------------------------------------------------------------
     # Internal — query execution per driver
@@ -294,6 +344,18 @@ class SQLConnector(BaseConnector):
     def _build_sqlalchemy_url(self) -> str:
         driver = self._driver
         scheme = _DRIVER_SCHEMES.get(driver, driver)
+
+        # File-based engines have no host/credentials. SQLAlchemy expects
+        # ``sqlite:///relative/path`` or ``sqlite:////absolute/path`` — the path
+        # (which may begin with "/") follows three slashes.
+        if driver in ("sqlite", "duckdb"):
+            database = self._config.get("database", "")
+            url = f"{scheme}:///{database}"
+            extra = self._config.get("extra", {})
+            if extra:
+                url += "?" + "&".join(f"{k}={v}" for k, v in extra.items())
+            return url
+
         user = self._config.get("username", "")
         password = self._config.get("password", "")
         host = self._config.get("host", "localhost")

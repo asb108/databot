@@ -164,11 +164,19 @@ class RAGContext:
     """Augments LLM prompts with relevant context from the vector store."""
 
     def __init__(
-        self, store: VectorStore, max_context_docs: int = 5, max_context_chars: int = 4000
+        self,
+        store: VectorStore,
+        max_context_docs: int = 5,
+        max_context_chars: int = 4000,
+        max_distance: float = 0.0,
     ):
         self._store = store
         self._max_docs = max_context_docs
         self._max_chars = max_context_chars
+        # Cosine distance is in [0, 2]; lower = more similar. 0 disables the
+        # relevance filter (keep all top-k). A value like 0.6 drops weakly
+        # related documents so irrelevant context is never injected.
+        self._max_distance = max_distance
 
     def enrich_prompt(self, user_message: str) -> str:
         """Query the vector store and return context to prepend to the prompt."""
@@ -177,6 +185,18 @@ class RAGContext:
         except Exception as e:
             logger.warning(f"RAG query failed: {e}")
             return ""
+
+        if not results:
+            return ""
+
+        # Drop documents below the relevance threshold (when configured).
+        if self._max_distance > 0:
+            filtered = [
+                item
+                for item in results
+                if item.get("distance") is None or item["distance"] <= self._max_distance
+            ]
+            results = filtered
 
         if not results:
             return ""

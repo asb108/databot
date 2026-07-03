@@ -1,7 +1,6 @@
 """Google Chat channel: webhook and app modes."""
 
-from __future__ import annotations
-
+import asyncio
 from typing import Any
 
 import httpx
@@ -20,11 +19,15 @@ class GChatChannel(BaseChannel):
         bus: MessageBus,
         mode: str = "webhook",
         webhook_url: str = "",
+        cfg_ref: Any | None = None,
+        loop_ref: Any | None = None,
     ):
         super().__init__(bus)
         self._mode = mode
         self._webhook_url = webhook_url
         self._running = False
+        self._cfg_ref = cfg_ref  # live reference to config for runtime updates
+        self._loop_ref = loop_ref  # AgentLoop ref for synchronous processing
 
         # Register outbound handler
         self.bus.on_outbound(self._handle_outbound)
@@ -32,6 +35,20 @@ class GChatChannel(BaseChannel):
     @property
     def name(self) -> str:
         return "gchat"
+
+    @property
+    def webhook_url(self) -> str:
+        """Return live webhook URL — prefer runtime config if available."""
+        if self._cfg_ref:
+            return self._cfg_ref.channels.gchat.webhook_url or self._webhook_url
+        return self._webhook_url
+
+    @property
+    def is_enabled(self) -> bool:
+        """Check if channel is currently enabled (supports runtime toggle)."""
+        if self._cfg_ref:
+            return self._cfg_ref.channels.gchat.enabled
+        return self._running
 
     async def start(self) -> None:
         self._running = True
@@ -43,7 +60,8 @@ class GChatChannel(BaseChannel):
 
     async def send(self, chat_id: str, content: str, thread_id: str | None = None) -> None:
         """Send a message to Google Chat via webhook."""
-        if not self._webhook_url:
+        url = self.webhook_url
+        if not url:
             logger.warning("Google Chat webhook URL not configured")
             return
 
@@ -55,7 +73,7 @@ class GChatChannel(BaseChannel):
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.post(
-                    self._webhook_url,
+                    url,
                     json=payload,
                     headers={"Content-Type": "application/json"},
                 )
@@ -66,16 +84,29 @@ class GChatChannel(BaseChannel):
 
     async def _handle_outbound(self, msg: OutboundMessage) -> None:
         """Handle outbound messages destined for Google Chat."""
-        if msg.channel == "gchat":
+        if msg.channel == "gchat" and self.is_enabled:
             await self.send(msg.chat_id, msg.content, msg.thread_id)
 
     def get_fastapi_routes(self):
-        """Return FastAPI routes for Google Chat App mode (bidirectional)."""
+        """Return FastAPI routes for Google Chat webhook/app events."""
         router = APIRouter()
 
         @router.post("/webhooks/gchat")
         async def gchat_webhook(request: Request):
-            """Handle incoming Google Chat events."""
+            """Handle incoming Google Chat events.
+
+            Google Chat expects a synchronous JSON response within 30 seconds.
+            We process the message through the agent loop inline and return
+            the LLM response directly.
+            """
+            if not self.is_enabled:
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse(
+                    {"error": "Google Chat channel is not enabled"},
+                    status_code=403,
+                )
+
             body = await request.json()
             event_type = body.get("type", "")
 
@@ -90,16 +121,35 @@ class GChatChannel(BaseChannel):
                 if not text:
                     return {"text": "I didn't receive any message content."}
 
-                # Publish inbound message to the bus
                 inbound = InboundMessage(
                     channel="gchat",
                     sender_id=sender.get("name", "unknown"),
                     chat_id=space.get("name", "unknown"),
                     content=text,
                 )
-                await self.bus.publish_inbound(inbound)
 
-                return {"text": "Processing your request... I'll post the response shortly."}
+                # Process synchronously via agent loop (GChat allows 30s)
+                if self._loop_ref:
+                    try:
+                        outbound = await asyncio.wait_for(
+                            self._loop_ref.process_message(inbound),
+                            timeout=28.0,  # leave 2s margin for GChat's 30s limit
+                        )
+                        if outbound and outbound.content:
+                            return {"text": outbound.content}
+                        return {"text": "I processed your request but had no output."}
+                    except asyncio.TimeoutError:
+                        logger.warning("GChat: agent loop timed out (28s)")
+                        return {
+                            "text": "Sorry, your request is taking too long. Please try a simpler query."
+                        }
+                    except Exception as e:
+                        logger.error(f"GChat: error processing message: {e}")
+                        return {"text": "Sorry, I encountered an error processing your request."}
+                else:
+                    # Fallback: publish to bus (async, response via webhook)
+                    await self.bus.publish_inbound(inbound)
+                    return {"text": "Processing your request..."}
 
             elif event_type == "ADDED_TO_SPACE":
                 return {
