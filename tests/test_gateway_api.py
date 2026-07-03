@@ -134,3 +134,48 @@ def test_queries_empty_without_saved_query_tool(client):
     r = client.get("/api/v1/queries")
     assert r.status_code == 200
     assert r.json() == {"queries": []}
+
+
+def test_health(client):
+    r = client.get("/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["version"] == "0.3.0"
+
+
+def test_stats(client):
+    r = client.get("/api/v1/stats")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["sessions_count"] == 0
+    assert "tools_count" in body
+    assert "usage" in body
+
+
+def test_tools_empty(client):
+    r = client.get("/api/v1/tools")
+    assert r.status_code == 200
+    assert r.json() == {"tools": []}
+
+
+def test_skills(client):
+    r = client.get("/api/v1/skills")
+    assert r.status_code == 200
+    assert r.json() == {"skills": []}
+
+
+def test_get_config(client):
+    # Exercises the config-route class (GET /api/v1/config) so any helper path
+    # in that region is covered — guards the app-factory extraction.
+    r = client.get("/api/v1/config")
+    assert r.status_code == 200
+    assert isinstance(r.json(), dict)
+
+
+def test_get_channels_config_masks_secrets(client):
+    # Drives the `_mask` helper path (nested in get_channels_config). Must not
+    # raise NameError after the verbatim move, and must not echo raw secrets.
+    r = client.get("/api/v1/config/channels")
+    assert r.status_code == 200
+    assert isinstance(r.json(), dict)
