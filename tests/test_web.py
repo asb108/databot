@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from databot.tools.errors import ToolError
 from databot.tools.web import WebFetchTool, WebSearchTool
 
 
@@ -25,8 +26,9 @@ class TestWebFetchTool:
     @pytest.mark.asyncio
     async def test_invalid_url(self):
         tool = WebFetchTool()
-        result = await tool.execute(url="not-a-real-url")
-        assert "Error" in result
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(url="not-a-real-url")
+        assert "Error" in exc_info.value.to_text()
 
 
 class TestWebSearchTool:
@@ -41,8 +43,9 @@ class TestWebSearchTool:
     @pytest.mark.asyncio
     async def test_search_without_key(self):
         tool = WebSearchTool()
-        result = await tool.execute(query="test")
-        assert "not configured" in result
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(query="test")
+        assert "not configured" in exc_info.value.message
 
     def test_configurable_results_count(self):
         tool = WebSearchTool(api_key="key", results_count=10)

@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 
 class WebFetchTool(BaseTool):
@@ -43,8 +44,10 @@ class WebFetchTool(BaseTool):
                 if len(content) > max_len:
                     content = content[:max_len] + "\n... (truncated)"
                 return content
+        except ToolError:
+            raise
         except Exception as e:
-            return f"Error fetching URL: {str(e)}"
+            raise ToolError(ErrorCode.CONNECTION_ERROR, f"Error fetching URL: {e}", retryable=True)
 
 
 class WebSearchTool(BaseTool):
@@ -73,8 +76,9 @@ class WebSearchTool(BaseTool):
 
     async def execute(self, query: str) -> str:
         if not self._api_key:
-            return (
-                "Error: Web search API key not configured. Set tools.web.search_api_key in config."
+            raise ToolError(
+                ErrorCode.NOT_CONFIGURED,
+                "Web search API key not configured. Set tools.web.search_api_key in config.",
             )
 
         try:
@@ -101,5 +105,7 @@ class WebSearchTool(BaseTool):
                 if not results:
                     return "No search results found."
                 return "\n---\n".join(results)
+        except ToolError:
+            raise
         except Exception as e:
-            return f"Error searching: {str(e)}"
+            raise ToolError(ErrorCode.CONNECTION_ERROR, f"Error searching: {e}", retryable=True)
