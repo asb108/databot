@@ -8,6 +8,7 @@ import shlex
 from typing import Any
 
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 # Shell metacharacters that enable command chaining, substitution, or redirection.
 # When a command allowlist is active these defeat the allowlist (e.g.
@@ -58,7 +59,7 @@ class ShellTool(BaseTool):
 
     async def execute(self, command: str) -> str:
         if not command or not command.strip():
-            return "Error: empty command."
+            raise ToolError(ErrorCode.INVALID_ARGUMENT, "empty command.")
 
         # When an allowlist is configured, enforce it securely: reject shell
         # metacharacters (which would let an allowlisted command chain into an
@@ -68,22 +69,23 @@ class ShellTool(BaseTool):
         if self._allowed_commands:
             metachar = next((c for c in command if c in _SHELL_METACHARACTERS), None)
             if metachar is not None:
-                return (
-                    f"Error: shell metacharacter {metachar!r} is not permitted when a "
+                raise ToolError(
+                    ErrorCode.PERMISSION_DENIED,
+                    f"shell metacharacter {metachar!r} is not permitted when a "
                     f"command allowlist is configured. Run a single command without "
-                    f"chaining, pipes, redirection, or substitution."
+                    f"chaining, pipes, redirection, or substitution.",
                 )
             try:
                 argv = shlex.split(command)
             except ValueError as e:
-                return f"Error: could not parse command: {e}"
+                raise ToolError(ErrorCode.INVALID_ARGUMENT, f"could not parse command: {e}")
             if not argv:
-                return "Error: empty command."
+                raise ToolError(ErrorCode.INVALID_ARGUMENT, "empty command.")
             base_cmd = os.path.basename(argv[0])
             if base_cmd not in self._allowed_commands and argv[0] not in self._allowed_commands:
-                return (
-                    f"Error: Command '{base_cmd}' is not in the allowed list: "
-                    f"{self._allowed_commands}"
+                raise ToolError(
+                    ErrorCode.PERMISSION_DENIED,
+                    f"Command '{base_cmd}' is not in the allowed list: {self._allowed_commands}",
                 )
             use_shell = False
 
@@ -127,6 +129,12 @@ class ShellTool(BaseTool):
             return output.strip()
 
         except asyncio.TimeoutError:
-            return f"Error: Command timed out after {self._timeout} seconds"
+            raise ToolError(
+                ErrorCode.TIMEOUT,
+                f"Command timed out after {self._timeout} seconds",
+                retryable=True,
+            )
+        except ToolError:
+            raise
         except Exception as e:
-            return f"Error executing command: {str(e)}"
+            raise ToolError(ErrorCode.INTERNAL_ERROR, f"Error executing command: {e}")
