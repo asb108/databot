@@ -15,7 +15,7 @@ from typing import Any
 from loguru import logger
 
 from databot.tools.base import BaseTool
-from databot.tools.errors import ToolError
+from databot.tools.errors import ErrorCode, ToolError
 
 # Write keywords that must never appear as the leading statement.
 _FORBIDDEN_LEADING = {
@@ -148,9 +148,11 @@ class NLToSQLTool(BaseTool):
 
         try:
             sql = await self._generate(question, schema_text)
+        except ToolError:
+            raise
         except Exception as e:
             logger.warning(f"NL-to-SQL generation failed: {e}")
-            return f"Error generating SQL: {e}"
+            raise ToolError(ErrorCode.INTERNAL_ERROR, f"Error generating SQL: {e}")
 
         if not sql:
             return "The model did not produce a query for that question."
