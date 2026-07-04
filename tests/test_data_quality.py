@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from databot.tools.data_quality import DataQualityTool, _validate_identifier
+from databot.tools.errors import ToolError
 
 
 class TestIdentifierValidation:
@@ -79,25 +80,28 @@ class TestDataQualityTool:
 
     @pytest.mark.asyncio
     async def test_null_check_missing_column(self, dq_tool):
-        result = await dq_tool.execute(check_type="null_check", connection="test", table="my_table")
-        assert "column is required" in result
+        with pytest.raises(ToolError) as exc_info:
+            await dq_tool.execute(check_type="null_check", connection="test", table="my_table")
+        assert "column is required" in exc_info.value.message
 
     @pytest.mark.asyncio
     async def test_rejects_malicious_table(self, dq_tool):
-        result = await dq_tool.execute(
-            check_type="row_count", connection="test", table="t; DROP TABLE x"
-        )
-        assert "Invalid table" in result
+        with pytest.raises(ToolError) as exc_info:
+            await dq_tool.execute(
+                check_type="row_count", connection="test", table="t; DROP TABLE x"
+            )
+        assert "Invalid table" in exc_info.value.message
 
     @pytest.mark.asyncio
     async def test_rejects_malicious_column(self, dq_tool):
-        result = await dq_tool.execute(
-            check_type="null_check",
-            connection="test",
-            table="my_table",
-            column="col1; --",
-        )
-        assert "Invalid column" in result
+        with pytest.raises(ToolError) as exc_info:
+            await dq_tool.execute(
+                check_type="null_check",
+                connection="test",
+                table="my_table",
+                column="col1; --",
+            )
+        assert "Invalid column" in exc_info.value.message
 
     @pytest.mark.asyncio
     async def test_compare(self, dq_tool):
@@ -113,8 +117,9 @@ class TestDataQualityTool:
     @pytest.mark.asyncio
     async def test_no_sql_tool(self):
         tool = DataQualityTool(sql_tool=None)
-        result = await tool.execute(check_type="row_count", connection="x", table="t")
-        assert "SQL tool not configured" in result
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(check_type="row_count", connection="x", table="t")
+        assert "SQL tool not configured" in exc_info.value.message
 
     @pytest.mark.asyncio
     async def test_unknown_check_type(self, dq_tool):

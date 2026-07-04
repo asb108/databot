@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from databot.connectors.identifiers import validate_identifier as _validate_identifier
 from databot.tools.base import BaseTool
-from databot.tools.errors import ToolError
+from databot.tools.errors import ErrorCode, ToolError
 
 if TYPE_CHECKING:
     from databot.tools.sql import SQLTool
@@ -72,13 +72,15 @@ class DataQualityTool(BaseTool):
 
     async def execute(self, check_type: str, connection: str, table: str, **kwargs: Any) -> str:
         if not self._sql:
-            return "Error: SQL tool not configured. Cannot run DQ checks."
+            raise ToolError(
+                ErrorCode.NOT_CONFIGURED, "SQL tool not configured. Cannot run DQ checks."
+            )
 
         # Validate table name to prevent SQL injection
         try:
             _validate_identifier(table, "table")
         except ValueError as e:
-            return f"Error: {e}"
+            raise ToolError(ErrorCode.INVALID_ARGUMENT, str(e))
 
         try:
             if check_type == "row_count":
@@ -86,36 +88,46 @@ class DataQualityTool(BaseTool):
             elif check_type == "null_check":
                 column = kwargs.get("column", "")
                 if not column:
-                    return "Error: column is required for null_check."
+                    raise ToolError(
+                        ErrorCode.INVALID_ARGUMENT, "column is required for null_check."
+                    )
                 try:
                     _validate_identifier(column, "column")
                 except ValueError as e:
-                    return f"Error: {e}"
+                    raise ToolError(ErrorCode.INVALID_ARGUMENT, str(e))
                 return await self._null_check(connection, table, column)
             elif check_type == "freshness":
                 ts_col = kwargs.get("timestamp_column", "")
                 if not ts_col:
-                    return "Error: timestamp_column is required for freshness check."
+                    raise ToolError(
+                        ErrorCode.INVALID_ARGUMENT,
+                        "timestamp_column is required for freshness check.",
+                    )
                 try:
                     _validate_identifier(ts_col, "timestamp_column")
                 except ValueError as e:
-                    return f"Error: {e}"
+                    raise ToolError(ErrorCode.INVALID_ARGUMENT, str(e))
                 threshold = kwargs.get("threshold_hours", 24)
                 return await self._freshness(connection, table, ts_col, threshold)
             elif check_type == "compare":
                 src_conn = kwargs.get("source_connection", "")
                 src_table = kwargs.get("source_table", "")
                 if not src_conn or not src_table:
-                    return "Error: source_connection and source_table required for compare."
+                    raise ToolError(
+                        ErrorCode.INVALID_ARGUMENT,
+                        "source_connection and source_table required for compare.",
+                    )
                 try:
                     _validate_identifier(src_table, "source_table")
                 except ValueError as e:
-                    return f"Error: {e}"
+                    raise ToolError(ErrorCode.INVALID_ARGUMENT, str(e))
                 return await self._compare(connection, table, src_conn, src_table)
             else:
                 return f"Unknown check type: {check_type}"
+        except ToolError:
+            raise
         except Exception as e:
-            return f"DQ check error: {str(e)}"
+            raise ToolError(ErrorCode.INTERNAL_ERROR, f"DQ check error: {e}")
 
     async def _row_count(self, connection: str, table: str) -> str:
         query = f"SELECT COUNT(*) as cnt FROM {table}"
