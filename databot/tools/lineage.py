@@ -100,6 +100,11 @@ class LineageTool(BaseTool):
         if self._marquez_url:
             try:
                 return await self._execute_marquez(action, table, **kwargs)
+            except ToolError:
+                # A structured validation error (e.g. missing target_table) is a
+                # user-input problem, not a Marquez outage — surface it, don't
+                # fall back and mask it behind a different error.
+                raise
             except Exception as e:
                 from loguru import logger
 
