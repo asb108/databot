@@ -242,7 +242,7 @@ class LineageTool(BaseTool):
                     return f"**Path exists** between `{table}` and `{target}` within depth 10."
                 return f"No path found from `{table}` to `{target}` in Marquez."
 
-        return f"Unknown action: {action}"
+        raise ToolError(ErrorCode.INVALID_ARGUMENT, f"Unknown action: {action}")
 
     async def _execute_graph(self, action: str, table: str, **kwargs: Any) -> str:
         """Execute lineage query against local NetworkX graph (original implementation)."""
@@ -344,4 +344,4 @@ class LineageTool(BaseTool):
                 info.append(f"- {k}: {v}")
             return "\n".join(info)
 
-        return f"Unknown action: {action}"
+        raise ToolError(ErrorCode.INVALID_ARGUMENT, f"Unknown action: {action}")

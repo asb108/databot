@@ -110,7 +110,7 @@ class AirflowTool(BaseTool):
                     raise ToolError(ErrorCode.INVALID_ARGUMENT, "dag_id is required for trigger.")
                 return await self._trigger(dag_id)
             else:
-                return f"Unknown action: {action}"
+                raise ToolError(ErrorCode.INVALID_ARGUMENT, f"Unknown action: {action}")
         except ToolError:
             raise
         except Exception as e:

@@ -123,5 +123,7 @@ class TestDataQualityTool:
 
     @pytest.mark.asyncio
     async def test_unknown_check_type(self, dq_tool):
-        result = await dq_tool.execute(check_type="unknown", connection="test", table="my_table")
-        assert "Unknown check type" in result
+        with pytest.raises(ToolError) as exc_info:
+            await dq_tool.execute(check_type="unknown", connection="test", table="my_table")
+        assert "Unknown check type" in exc_info.value.message
+        assert exc_info.value.code == "invalid_argument"

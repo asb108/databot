@@ -81,4 +81,4 @@ class CronTool(BaseTool):
                 return f"Removed job {job_id}"
             return f"Job {job_id} not found."
 
-        return f"Unknown action: {action}"
+        raise ToolError(ErrorCode.INVALID_ARGUMENT, f"Unknown action: {action}")

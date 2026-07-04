@@ -87,7 +87,7 @@ class MonitorTool(BaseTool):
             return await self._run_now(kwargs.get("monitor_id", ""))
         if action == "history":
             return self._history(kwargs.get("monitor_id", ""))
-        return f"Unknown action '{action}'."
+        raise ToolError(ErrorCode.INVALID_ARGUMENT, f"Unknown action '{action}'.")
 
     def _create(self, kw: dict[str, Any]) -> str:
         required = ["name", "connection", "check_type", "operator", "threshold", "schedule"]

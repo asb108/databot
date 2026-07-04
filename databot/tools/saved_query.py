@@ -68,7 +68,7 @@ class SavedQueryTool(BaseTool):
             return f"Deleted query '{name}'." if ok else f"No saved query named '{name}'."
         if action == "run":
             return await self._run(name, kwargs.get("params"), kwargs.get("connection", ""))
-        return f"Unknown action '{action}'."
+        raise ToolError(ErrorCode.INVALID_ARGUMENT, f"Unknown action '{action}'.")
 
     def _save(self, kw: dict[str, Any]) -> str:
         name = kw.get("name", "")

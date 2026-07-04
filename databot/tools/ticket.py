@@ -205,4 +205,4 @@ class TicketTool(BaseTool):
                 res.raise_for_status()
                 return f"Ticket created successfully: {res.json().get('id', 'Unknown ID')}"
 
-        return "Unknown action"
+        raise ToolError(ErrorCode.INVALID_ARGUMENT, "Unknown action")

@@ -123,7 +123,7 @@ class DataQualityTool(BaseTool):
                     raise ToolError(ErrorCode.INVALID_ARGUMENT, str(e))
                 return await self._compare(connection, table, src_conn, src_table)
             else:
-                return f"Unknown check type: {check_type}"
+                raise ToolError(ErrorCode.INVALID_ARGUMENT, f"Unknown check type: {check_type}")
         except ToolError:
             raise
         except Exception as e:
