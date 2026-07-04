@@ -15,6 +15,7 @@ from typing import Any
 
 from databot.connectors.identifiers import IdentifierError, validate_identifier
 from databot.tools.base import BaseTool
+from databot.tools.errors import ToolError
 
 _MAX_COLUMNS = 40
 
@@ -93,9 +94,12 @@ class DataProfileTool(BaseTool):
             return f"Error: {e}"
 
         # Total row count first (also validates the table is queryable).
-        total_md = await self._sql.execute(
-            query=f"SELECT COUNT(*) AS total FROM {table}", connection=connection
-        )
+        try:
+            total_md = await self._sql.execute(
+                query=f"SELECT COUNT(*) AS total FROM {table}", connection=connection
+            )
+        except ToolError as e:
+            total_md = e.to_text()
         total_row = _parse_single_row(total_md)
         if total_row is None:
             # Surface the underlying error (e.g. unknown connection / table).
@@ -131,9 +135,12 @@ class DataProfileTool(BaseTool):
 
     async def _discover_columns(self, connection: str, table: str) -> list[str] | None:
         """Best-effort column discovery via a single-row sample."""
-        sample = await self._sql.execute(
-            query=f"SELECT * FROM {table} LIMIT 1", connection=connection
-        )
+        try:
+            sample = await self._sql.execute(
+                query=f"SELECT * FROM {table} LIMIT 1", connection=connection
+            )
+        except ToolError as e:
+            sample = e.to_text()
         lines = [ln for ln in sample.splitlines() if ln.strip().startswith("|")]
         if not lines:
             return None
@@ -153,7 +160,10 @@ class DataProfileTool(BaseTool):
             f"SELECT COUNT({col}) AS non_null, COUNT(DISTINCT {col}) AS distinct_count, "
             f"MIN({col}) AS min_val, MAX({col}) AS max_val FROM {table}"
         )
-        md = await self._sql.execute(query=query, connection=connection)
+        try:
+            md = await self._sql.execute(query=query, connection=connection)
+        except ToolError as e:
+            md = e.to_text()
         parsed = _parse_single_row(md)
         if parsed is None:
             return {"column": col, "error": True}

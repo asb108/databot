@@ -20,6 +20,7 @@ from databot.monitors.evaluator import (
     parse_metric_value,
 )
 from databot.monitors.store import MonitorStore
+from databot.tools.errors import ToolError
 
 
 class MonitorService:
@@ -101,7 +102,10 @@ class MonitorService:
             self.store.record_run(monitor["id"], None, "error", False)
             return {"status": "error", "detail": str(e), "breached": False}
 
-        result_md = await self._sql.execute(query=query, connection=monitor["connection"])
+        try:
+            result_md = await self._sql.execute(query=query, connection=monitor["connection"])
+        except ToolError as e:
+            result_md = e.to_text()
         value = parse_metric_value(result_md)
         if value is None:
             self.store.record_run(monitor["id"], None, "error", False)

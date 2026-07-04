@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from databot.connectors.identifiers import validate_identifier as _validate_identifier
 from databot.tools.base import BaseTool
+from databot.tools.errors import ToolError
 
 if TYPE_CHECKING:
     from databot.tools.sql import SQLTool
@@ -118,7 +119,10 @@ class DataQualityTool(BaseTool):
 
     async def _row_count(self, connection: str, table: str) -> str:
         query = f"SELECT COUNT(*) as cnt FROM {table}"
-        result = await self._sql.execute(query=query, connection=connection)
+        try:
+            result = await self._sql.execute(query=query, connection=connection)
+        except ToolError as e:
+            result = e.to_text()
         return f"**Row count for `{table}`:**\n{result}"
 
     async def _null_check(self, connection: str, table: str, column: str) -> str:
@@ -131,7 +135,10 @@ class DataQualityTool(BaseTool):
                 ) as null_pct
             FROM {table}
         """
-        result = await self._sql.execute(query=query, connection=connection)
+        try:
+            result = await self._sql.execute(query=query, connection=connection)
+        except ToolError as e:
+            result = e.to_text()
         return f"**Null check for `{table}.{column}`:**\n{result}"
 
     async def _freshness(
@@ -143,7 +150,10 @@ class DataQualityTool(BaseTool):
                 TIMESTAMPDIFF(HOUR, MAX({ts_column}), NOW()) as hours_stale
             FROM {table}
         """
-        result = await self._sql.execute(query=query, connection=connection)
+        try:
+            result = await self._sql.execute(query=query, connection=connection)
+        except ToolError as e:
+            result = e.to_text()
         return f"**Freshness check for `{table}` (threshold: {threshold_hours}h):**\n{result}"
 
     async def _compare(
@@ -153,14 +163,20 @@ class DataQualityTool(BaseTool):
         source_conn: str,
         source_table: str,
     ) -> str:
-        src_result = await self._sql.execute(
-            query=f"SELECT COUNT(*) as cnt FROM {source_table}",
-            connection=source_conn,
-        )
-        tgt_result = await self._sql.execute(
-            query=f"SELECT COUNT(*) as cnt FROM {target_table}",
-            connection=target_conn,
-        )
+        try:
+            src_result = await self._sql.execute(
+                query=f"SELECT COUNT(*) as cnt FROM {source_table}",
+                connection=source_conn,
+            )
+        except ToolError as e:
+            src_result = e.to_text()
+        try:
+            tgt_result = await self._sql.execute(
+                query=f"SELECT COUNT(*) as cnt FROM {target_table}",
+                connection=target_conn,
+            )
+        except ToolError as e:
+            tgt_result = e.to_text()
         return (
             f"**Source-target comparison:**\n"
             f"Source (`{source_table}` on {source_conn}):\n{src_result}\n\n"

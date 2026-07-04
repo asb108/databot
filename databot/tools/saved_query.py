@@ -6,6 +6,7 @@ from typing import Any
 
 from databot.queries.store import QueryStore, placeholders, render_query
 from databot.tools.base import BaseTool
+from databot.tools.errors import ToolError
 
 
 class SavedQueryTool(BaseTool):
@@ -125,5 +126,8 @@ class SavedQueryTool(BaseTool):
             rendered = render_query(q["sql"], params)
         except ValueError as e:
             return f"Error: {e}"
-        result = await self._sql.execute(query=rendered, connection=conn)
+        try:
+            result = await self._sql.execute(query=rendered, connection=conn)
+        except ToolError as e:
+            result = e.to_text()
         return f"**{name}**\n```sql\n{rendered}\n```\n\n{result}"

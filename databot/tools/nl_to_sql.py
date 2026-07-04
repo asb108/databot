@@ -15,6 +15,7 @@ from typing import Any
 from loguru import logger
 
 from databot.tools.base import BaseTool
+from databot.tools.errors import ToolError
 
 # Write keywords that must never appear as the leading statement.
 _FORBIDDEN_LEADING = {
@@ -161,7 +162,10 @@ class NLToSQLTool(BaseTool):
 
         out = f"**Generated SQL:**\n```sql\n{sql}\n```"
         if execute:
-            result = await self._sql.execute(query=sql, connection=connection)
+            try:
+                result = await self._sql.execute(query=sql, connection=connection)
+            except ToolError as e:
+                result = e.to_text()
             out += f"\n\n**Result:**\n{result}"
         return out
 
