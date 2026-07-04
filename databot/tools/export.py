@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -97,14 +98,15 @@ class ExportTool(BaseTool):
     ) -> str:
         target = self._resolve_path(filename)
         if target is None:
-            return (
-                f"Error: invalid filename '{filename}'. Use a simple name like "
-                "report.csv (no paths or special characters)."
+            raise ToolError(
+                ErrorCode.INVALID_ARGUMENT,
+                f"invalid filename '{filename}'. Use a simple name like "
+                "report.csv (no paths or special characters).",
             )
 
         data, error = await self._fetch_rows(connection, query)
         if data is None:
-            return f"Error: {error}"
+            raise ToolError(ErrorCode.CONNECTION_ERROR, str(error), retryable=True)
         columns, rows = data
 
         try:
@@ -119,7 +121,7 @@ class ExportTool(BaseTool):
                 writer.writerows(rows)
                 target.write_text(buf.getvalue())
         except OSError as e:
-            return f"Error writing file: {e}"
+            raise ToolError(ErrorCode.INTERNAL_ERROR, f"Error writing file: {e}")
 
         note = ""
         if len(rows) >= self._max_rows:
