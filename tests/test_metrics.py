@@ -81,13 +81,13 @@ class TestToolRegistryInstrumentation:
 
         assert await reg.execute("echo", {}) == "ok"
         result = await reg.execute("boom", {})
-        assert "Error executing tool" in result
+        assert "Error [internal_error]" in result
         assert "Unknown tool" in await reg.execute("missing", {})
 
         payload = m.render().decode()
         assert 'tool="echo",status="ok"' in payload.replace(" ", "") or 'status="ok"' in payload
-        assert 'status="error"' in payload
-        assert 'status="unknown"' in payload
+        assert 'status="internal_error"' in payload
+        assert 'status="unknown_tool"' in payload
         configure_metrics(enabled=False)
 
 

@@ -30,8 +30,9 @@ class ErrorCode:
 class ToolError(Exception):
     """A structured, LLM-facing tool failure."""
 
-    def __init__(self, code: str, message: str, *, hint: str | None = None,
-                 retryable: bool = False) -> None:
+    def __init__(
+        self, code: str, message: str, *, hint: str | None = None, retryable: bool = False
+    ) -> None:
         self.code = code
         self.message = message
         self.hint = hint

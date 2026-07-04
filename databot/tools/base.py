@@ -8,6 +8,8 @@ from typing import Any
 
 from loguru import logger
 
+from databot.tools.errors import ErrorCode, ToolError
+
 # Default per-tool execution timeout (seconds).  Individual tools can
 # override by setting a ``timeout`` attribute.
 DEFAULT_TOOL_TIMEOUT: int = 120
@@ -75,7 +77,7 @@ class ToolRegistry:
         return [tool.schema() for tool in self._tools.values()]
 
     async def execute(self, name: str, arguments: dict[str, Any]) -> str:
-        """Execute a tool by name with timeout enforcement."""
+        """Execute a tool by name with timeout enforcement and structured errors."""
         from databot.audit import get_audit_log
         from databot.observability.metrics import get_metrics
 
@@ -83,9 +85,10 @@ class ToolRegistry:
         audit = get_audit_log()
         tool = self._tools.get(name)
         if not tool:
-            metrics.tool_call(name, "unknown")
-            audit.record(name, arguments, "unknown")
-            return f"Error: Unknown tool '{name}'"
+            err = ToolError(ErrorCode.UNKNOWN_TOOL, f"Unknown tool '{name}'.")
+            metrics.tool_call(name, err.code)
+            audit.record(name, arguments, err.code)
+            return err.to_text()
 
         timeout = tool.timeout if tool.timeout is not None else self._default_timeout
 
@@ -93,16 +96,25 @@ class ToolRegistry:
         start = loop.time()
         status = "ok"
         try:
-            result = await asyncio.wait_for(tool.execute(**arguments), timeout=timeout)
-            return result
+            return await asyncio.wait_for(tool.execute(**arguments), timeout=timeout)
+        except ToolError as e:
+            logger.warning(f"Tool '{name}' error [{e.code}]: {e.message}")
+            status = e.code
+            return e.to_text()
         except asyncio.TimeoutError:
             logger.error(f"Tool '{name}' timed out after {timeout}s")
-            status = "timeout"
-            return f"Error: Tool '{name}' timed out after {timeout} seconds."
+            e = ToolError(
+                ErrorCode.TIMEOUT,
+                f"Tool '{name}' timed out after {timeout} seconds.",
+                retryable=True,
+            )
+            status = e.code
+            return e.to_text()
         except Exception as e:
             logger.error(f"Tool '{name}' failed: {e}")
-            status = "error"
-            return f"Error executing tool '{name}': {str(e)}"
+            err = ToolError(ErrorCode.INTERNAL_ERROR, f"Tool '{name}' failed: {e}")
+            status = err.code
+            return err.to_text()
         finally:
             elapsed = loop.time() - start
             metrics.tool_call(name, status, elapsed)
