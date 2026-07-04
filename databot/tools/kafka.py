@@ -7,6 +7,7 @@ from typing import Any
 from databot.connectors.kafka_connector import KafkaConnector
 from databot.connectors.registry import ConnectorRegistry
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 
 class KafkaTool(BaseTool):
@@ -82,12 +83,10 @@ class KafkaTool(BaseTool):
 
     async def execute(self, action: str, connector: str = "", **kwargs: Any) -> str:
         kafka = self._resolve_connector(connector)
-        if isinstance(kafka, str):
-            return kafka  # Error message
 
         result = await kafka.execute(action, **kwargs)
         if not result.success:
-            return f"Error: {result.error}"
+            raise ToolError(ErrorCode.CONNECTION_ERROR, str(result.error), retryable=True)
         if result.columns and result.rows:
             return result.to_markdown_table()
         if result.data is not None:
@@ -98,22 +97,26 @@ class KafkaTool(BaseTool):
             return json.dumps(result.data, indent=2, default=str)
         return "OK"
 
-    def _resolve_connector(self, name: str) -> KafkaConnector | str:
+    def _resolve_connector(self, name: str) -> KafkaConnector:
         """Resolve connector by name, or pick the only one if unambiguous."""
         if name:
             conn = self._registry.get(name)
             if conn is None:
-                return f"Error: Kafka connector '{name}' not found."
+                raise ToolError(ErrorCode.NOT_FOUND, f"Kafka connector '{name}' not found.")
             if not isinstance(conn, KafkaConnector):
-                return f"Error: Connector '{name}' is not a Kafka connector."
+                raise ToolError(
+                    ErrorCode.INVALID_ARGUMENT,
+                    f"Connector '{name}' is not a Kafka connector.",
+                )
             return conn
 
         kafka_connectors = [c for c in self._registry.list_all() if isinstance(c, KafkaConnector)]
         if len(kafka_connectors) == 0:
-            return "Error: No Kafka connectors configured."
+            raise ToolError(ErrorCode.NOT_CONFIGURED, "No Kafka connectors configured.")
         if len(kafka_connectors) == 1:
             return kafka_connectors[0]
         names = ", ".join(c.name for c in kafka_connectors)
-        return (
-            f"Error: Multiple Kafka connectors configured ({names}). Specify 'connector' parameter."
+        raise ToolError(
+            ErrorCode.INVALID_ARGUMENT,
+            f"Multiple Kafka connectors configured ({names}). Specify 'connector' parameter.",
         )
