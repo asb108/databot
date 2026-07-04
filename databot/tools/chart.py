@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 # Eighth-block characters for sub-cell resolution.
 _BLOCKS = " ▏▎▍▌▋▊▉█"
@@ -145,9 +146,9 @@ class ChartTool(BaseTool):
     ) -> str:
         nums = _coerce_floats(values or [])
         if nums is None:
-            return "Error: all values must be numbers."
+            raise ToolError(ErrorCode.INVALID_ARGUMENT, "all values must be numbers.")
         if not nums:
-            return "Error: no values to chart."
+            raise ToolError(ErrorCode.INVALID_ARGUMENT, "no values to chart.")
         nums = nums[: self._max_points]
 
         if chart_type == "bar":
@@ -159,4 +160,4 @@ class ChartTool(BaseTool):
             return render_line_chart(nums, title=title)
         if chart_type == "sparkline":
             return render_sparkline(nums, title=title)
-        return f"Error: unknown chart_type '{chart_type}'."
+        raise ToolError(ErrorCode.INVALID_ARGUMENT, f"unknown chart_type '{chart_type}'.")

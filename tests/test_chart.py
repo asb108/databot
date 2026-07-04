@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import pytest
+
 from databot.tools.chart import (
     ChartTool,
     render_bar_chart,
     render_line_chart,
     render_sparkline,
 )
+from databot.tools.errors import ToolError
 
 
 class TestRenderers:
@@ -50,13 +53,15 @@ class TestChartTool:
 
     async def test_rejects_non_numeric(self):
         tool = ChartTool()
-        out = await tool.execute(chart_type="bar", values=["a", "b"])
-        assert "must be numbers" in out
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(chart_type="bar", values=["a", "b"])
+        assert "must be numbers" in exc_info.value.message
 
     async def test_empty(self):
         tool = ChartTool()
-        out = await tool.execute(chart_type="bar", values=[])
-        assert "no values" in out
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(chart_type="bar", values=[])
+        assert "no values" in exc_info.value.message
 
     async def test_labels_padded_when_short(self):
         tool = ChartTool()
@@ -66,5 +71,6 @@ class TestChartTool:
 
     async def test_unknown_type(self):
         tool = ChartTool()
-        out = await tool.execute(chart_type="pie", values=[1, 2])
-        assert "unknown chart_type" in out
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(chart_type="pie", values=[1, 2])
+        assert "unknown chart_type" in exc_info.value.message
