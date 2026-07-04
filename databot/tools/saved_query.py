@@ -6,7 +6,7 @@ from typing import Any
 
 from databot.queries.store import QueryStore, placeholders, render_query
 from databot.tools.base import BaseTool
-from databot.tools.errors import ToolError
+from databot.tools.errors import ErrorCode, ToolError
 
 
 class SavedQueryTool(BaseTool):
@@ -60,7 +60,7 @@ class SavedQueryTool(BaseTool):
         if action == "save":
             return self._save(kwargs)
         if not name:
-            return f"Error: 'name' is required for {action}."
+            raise ToolError(ErrorCode.INVALID_ARGUMENT, f"'name' is required for {action}.")
         if action == "get":
             return self._get(name)
         if action == "delete":
@@ -74,7 +74,9 @@ class SavedQueryTool(BaseTool):
         name = kw.get("name", "")
         sql = kw.get("sql", "")
         if not name or not sql:
-            return "Error: 'name' and 'sql' are required to save a query."
+            raise ToolError(
+                ErrorCode.INVALID_ARGUMENT, "'name' and 'sql' are required to save a query."
+            )
         self._store.save(
             name, sql, connection=kw.get("connection", ""), description=kw.get("description", "")
         )
@@ -118,14 +120,17 @@ class SavedQueryTool(BaseTool):
         if not q:
             return f"No saved query named '{name}'."
         if not self._sql:
-            return "Error: SQL tool not available to run queries."
+            raise ToolError(ErrorCode.NOT_CONFIGURED, "SQL tool not available to run queries.")
         conn = connection or q.get("connection", "")
         if not conn:
-            return f"Error: no connection for '{name}'. Pass 'connection' to run it."
+            raise ToolError(
+                ErrorCode.NOT_CONFIGURED,
+                f"no connection for '{name}'. Pass 'connection' to run it.",
+            )
         try:
             rendered = render_query(q["sql"], params)
         except ValueError as e:
-            return f"Error: {e}"
+            raise ToolError(ErrorCode.INVALID_ARGUMENT, str(e))
         try:
             result = await self._sql.execute(query=rendered, connection=conn)
         except ToolError as e:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from databot.queries.store import QueryStore, placeholders, render_query
+from databot.tools.errors import ToolError
 from databot.tools.saved_query import SavedQueryTool
 
 
@@ -99,8 +100,9 @@ class TestSavedQueryTool:
     async def test_run_missing_param(self, tmp_path):
         tool = self._tool(tmp_path, sql=_SQL())
         await tool.execute(action="save", name="q", sql="SELECT {a}", connection="wh")
-        out = await tool.execute(action="run", name="q", params={})
-        assert "Missing parameter" in out
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(action="run", name="q", params={})
+        assert "Missing parameter" in exc_info.value.message
 
     async def test_run_unknown_query(self, tmp_path):
         out = await self._tool(tmp_path, sql=_SQL()).execute(action="run", name="nope")
@@ -109,8 +111,9 @@ class TestSavedQueryTool:
     async def test_run_needs_connection(self, tmp_path):
         tool = self._tool(tmp_path, sql=_SQL())
         await tool.execute(action="save", name="q", sql="SELECT 1")  # no connection
-        out = await tool.execute(action="run", name="q")
-        assert "no connection" in out
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(action="run", name="q")
+        assert "no connection" in exc_info.value.message
 
     async def test_list_and_get(self, tmp_path):
         tool = self._tool(tmp_path)
