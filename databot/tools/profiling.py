@@ -15,7 +15,7 @@ from typing import Any
 
 from databot.connectors.identifiers import IdentifierError, validate_identifier
 from databot.tools.base import BaseTool
-from databot.tools.errors import ToolError
+from databot.tools.errors import ErrorCode, ToolError
 
 _MAX_COLUMNS = 40
 
@@ -86,12 +86,14 @@ class DataProfileTool(BaseTool):
         **kwargs: Any,
     ) -> str:
         if not self._sql:
-            return "Error: SQL tool not configured. Cannot profile data."
+            raise ToolError(
+                ErrorCode.NOT_CONFIGURED, "SQL tool not configured. Cannot profile data."
+            )
 
         try:
             validate_identifier(table, "table")
         except IdentifierError as e:
-            return f"Error: {e}"
+            raise ToolError(ErrorCode.INVALID_ARGUMENT, str(e))
 
         # Total row count first (also validates the table is queryable).
         try:
@@ -114,7 +116,7 @@ class DataProfileTool(BaseTool):
             try:
                 target_cols = [validate_identifier(c, "column") for c in columns]
             except IdentifierError as e:
-                return f"Error: {e}"
+                raise ToolError(ErrorCode.INVALID_ARGUMENT, str(e))
         else:
             discovered = await self._discover_columns(connection, table)
             if discovered is None:

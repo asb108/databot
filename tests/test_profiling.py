@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from databot.tools.errors import ToolError
 from databot.tools.profiling import DataProfileTool, _parse_single_row
 
 
@@ -39,13 +42,15 @@ class TestParseSingleRow:
 class TestDataProfileTool:
     async def test_rejects_injection_in_table(self):
         tool = DataProfileTool(sql_tool=_ScriptedSQL({}))
-        out = await tool.execute(connection="c", table="t; DROP TABLE x")
-        assert "Error" in out and "Invalid" in out
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(connection="c", table="t; DROP TABLE x")
+        assert "Invalid" in exc_info.value.message
 
     async def test_rejects_injection_in_columns(self):
         tool = DataProfileTool(sql_tool=_ScriptedSQL({"COUNT(*)": _md(["total"], [100])}))
-        out = await tool.execute(connection="c", table="orders", columns=["id', (SELECT 1)"])
-        assert "Invalid" in out
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(connection="c", table="orders", columns=["id', (SELECT 1)"])
+        assert "Invalid" in exc_info.value.message
 
     async def test_profiles_explicit_columns(self):
         sql = _ScriptedSQL(
@@ -97,5 +102,6 @@ class TestDataProfileTool:
 
     async def test_no_sql_tool(self):
         tool = DataProfileTool(sql_tool=None)
-        out = await tool.execute(connection="c", table="orders")
-        assert "not configured" in out
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(connection="c", table="orders")
+        assert "not configured" in exc_info.value.message
