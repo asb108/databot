@@ -137,6 +137,8 @@ class SQLTool(BaseTool):
                 f"Required database driver not installed: {e}.",
                 hint="Install with: pip install databot[sql]",
             )
+        except ToolError:
+            raise  # preserve a structured error's own code; don't reclassify
         except Exception as e:
             logger.error(f"SQL error on {connection}: {e}")
             raise ToolError(ErrorCode.INTERNAL_ERROR, f"executing query: {e}")
