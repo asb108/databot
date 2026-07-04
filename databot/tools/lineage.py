@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 
 class LineageTool(BaseTool):
@@ -33,7 +34,11 @@ class LineageTool(BaseTool):
         try:
             import networkx as nx
         except ImportError:
-            raise ImportError("networkx not installed. Install with: pip install databot[lineage]")
+            raise ToolError(
+                ErrorCode.DEPENDENCY_MISSING,
+                "networkx not installed.",
+                hint="pip install databot[lineage]",
+            )
 
         if not self._graph_path or not Path(self._graph_path).exists():
             self._graph = nx.DiGraph()
@@ -211,7 +216,9 @@ class LineageTool(BaseTool):
             elif action == "path":
                 target = kwargs.get("target_table", "")
                 if not target:
-                    return "Error: target_table is required for path action."
+                    raise ToolError(
+                        ErrorCode.INVALID_ARGUMENT, "target_table is required for path action."
+                    )
                 # Use lineage graph to find path
                 ns = namespace or "default"
                 resp = await client.get(
@@ -237,12 +244,18 @@ class LineageTool(BaseTool):
         try:
             import networkx as nx
         except ImportError:
-            return "Error: networkx not installed. Install with: pip install databot[lineage]"
+            raise ToolError(
+                ErrorCode.DEPENDENCY_MISSING,
+                "networkx not installed.",
+                hint="pip install databot[lineage]",
+            )
 
         try:
             self._load_graph()
+        except ToolError:
+            raise
         except Exception as e:
-            return f"Error loading lineage graph: {e}"
+            raise ToolError(ErrorCode.INTERNAL_ERROR, f"loading lineage graph: {e}")
 
         if action == "search":
             matches = [n for n in self._graph.nodes if table.lower() in n.lower()]
@@ -299,7 +312,9 @@ class LineageTool(BaseTool):
         elif action == "path":
             target = kwargs.get("target_table", "")
             if not target:
-                return "Error: target_table is required for path action."
+                raise ToolError(
+                    ErrorCode.INVALID_ARGUMENT, "target_table is required for path action."
+                )
             if target not in self._graph:
                 return f"Target table '{target}' not found in lineage graph."
 
