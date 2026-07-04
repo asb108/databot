@@ -6,6 +6,7 @@ from typing import Any
 
 from databot.monitors.evaluator import OPERATORS, MonitorError
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 
 class MonitorTool(BaseTool):
@@ -69,7 +70,10 @@ class MonitorTool(BaseTool):
 
     async def execute(self, action: str, **kwargs: Any) -> str:
         if self._service is None:
-            return "Error: monitor service not available (run inside the gateway)."
+            raise ToolError(
+                ErrorCode.NOT_CONFIGURED,
+                "monitor service not available (run inside the gateway).",
+            )
 
         if action == "list":
             return self._format_list()
@@ -89,7 +93,10 @@ class MonitorTool(BaseTool):
         required = ["name", "connection", "check_type", "operator", "threshold", "schedule"]
         missing = [r for r in required if not kw.get(r) and kw.get(r) != 0]
         if missing:
-            return f"Error: missing required fields: {', '.join(missing)}."
+            raise ToolError(
+                ErrorCode.INVALID_ARGUMENT,
+                f"missing required fields: {', '.join(missing)}.",
+            )
         try:
             monitor_id = self._service.add_monitor(
                 name=kw["name"],
@@ -105,7 +112,7 @@ class MonitorTool(BaseTool):
                 chat_id=kw.get("chat_id", ""),
             )
         except (MonitorError, ValueError) as e:
-            return f"Error: {e}"
+            raise ToolError(ErrorCode.INVALID_ARGUMENT, str(e))
         return f"Created monitor '{kw['name']}' (id: {monitor_id}), schedule '{kw['schedule']}'."
 
     def _format_list(self) -> str:
