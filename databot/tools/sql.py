@@ -9,6 +9,7 @@ from typing import Any
 from loguru import logger
 
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 # Forbidden SQL keywords for write operations
 _FORBIDDEN_KEYWORDS = {
@@ -88,13 +89,15 @@ class SQLTool(BaseTool):
     async def execute(self, query: str, connection: str) -> str:
         if connection not in self._connections:
             available = ", ".join(self._connections.keys())
-            return f"Error: Unknown connection '{connection}'. Available: {available}"
+            raise ToolError(
+                ErrorCode.NOT_FOUND,
+                f"Unknown connection '{connection}'.",
+                hint=f"Available: {available}",
+            )
 
-        # Read-only enforcement
+        # Read-only enforcement (raises ToolError on violation)
         if self._read_only:
-            violation = self._check_read_only(query)
-            if violation:
-                return violation
+            self._check_read_only(query)
 
         # --- Try connector-backed execution first ---
         if self._connector_registry:
@@ -109,7 +112,11 @@ class SQLTool(BaseTool):
                         )
                         if result.success:
                             return result.to_markdown_table(max_rows=self._max_rows)
-                        return f"Error: {result.error}"
+                        raise ToolError(
+                            ErrorCode.CONNECTION_ERROR, str(result.error), retryable=True
+                        )
+                except ToolError:
+                    raise
                 except Exception as e:
                     logger.warning(f"Connector '{connection}' failed, falling back to legacy: {e}")
 
@@ -125,22 +132,26 @@ class SQLTool(BaseTool):
             else:
                 return await self._execute_sqlalchemy(query, conn_config)
         except ImportError as e:
-            return (
-                f"Error: Required database driver not installed: {e}. "
-                f"Install with: pip install databot[sql]"
+            raise ToolError(
+                ErrorCode.DEPENDENCY_MISSING,
+                f"Required database driver not installed: {e}.",
+                hint="Install with: pip install databot[sql]",
             )
         except Exception as e:
             logger.error(f"SQL error on {connection}: {e}")
-            return f"Error executing query: {str(e)}"
+            raise ToolError(ErrorCode.INTERNAL_ERROR, f"executing query: {e}")
 
-    def _check_read_only(self, query: str) -> str | None:
-        """Validate that a query is read-only. Returns error message or None."""
+    def _check_read_only(self, query: str) -> None:
+        """Validate that a query is read-only. Raises ToolError on violation."""
         normalized = query.strip()
 
         # Reject multiple statements (prevents "SELECT 1; DROP TABLE x")
         parts = [p.strip() for p in _MULTI_STATEMENT_RE.split(normalized) if p.strip()]
         if len(parts) > 1:
-            return "Error: Multiple SQL statements are not allowed in read-only mode."
+            raise ToolError(
+                ErrorCode.READ_ONLY_VIOLATION,
+                "Multiple SQL statements are not allowed in read-only mode.",
+            )
 
         # Check all keywords in the query, not just the first word
         upper = normalized.upper()
@@ -150,8 +161,9 @@ class SQLTool(BaseTool):
 
         first_word = upper.split()[0] if upper.split() else ""
         if first_word in _FORBIDDEN_KEYWORDS:
-            return (
-                f"Error: Write operations are not allowed (read_only=true). Blocked: {first_word}"
+            raise ToolError(
+                ErrorCode.READ_ONLY_VIOLATION,
+                f"Write operations are not allowed (read_only=true). Blocked: {first_word}",
             )
 
         # Also scan for forbidden keywords after WITH (CTE wrapping writes)
@@ -162,12 +174,11 @@ class SQLTool(BaseTool):
             for keyword in _FORBIDDEN_KEYWORDS:
                 pattern = rf"\)\s*{keyword}\b"
                 if re.search(pattern, upper):
-                    return (
-                        f"Error: Write operations are not allowed (read_only=true). "
-                        f"Blocked: CTE wrapping {keyword}"
+                    raise ToolError(
+                        ErrorCode.READ_ONLY_VIOLATION,
+                        f"Write operations are not allowed (read_only=true). "
+                        f"Blocked: CTE wrapping {keyword}",
                     )
-
-        return None
 
     async def _execute_mysql(self, query: str, config: dict) -> str:
         """Execute query using mysql-connector-python."""

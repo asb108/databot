@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from databot.tools.errors import ErrorCode, ToolError
 from databot.tools.sql import SQLTool
 
 
@@ -22,72 +23,88 @@ class TestReadOnlyEnforcement:
 
     @pytest.mark.asyncio
     async def test_blocks_insert(self, sql_tool):
-        result = await sql_tool.execute("INSERT INTO t VALUES (1)", "test")
-        assert "Write operations are not allowed" in result
-        assert "INSERT" in result
+        with pytest.raises(ToolError) as exc_info:
+            await sql_tool.execute("INSERT INTO t VALUES (1)", "test")
+        msg = exc_info.value.to_text()
+        assert "Write operations are not allowed" in msg
+        assert "INSERT" in msg
 
     @pytest.mark.asyncio
     async def test_blocks_update(self, sql_tool):
-        result = await sql_tool.execute("UPDATE t SET x=1", "test")
-        assert "Write operations are not allowed" in result
+        with pytest.raises(ToolError) as exc_info:
+            await sql_tool.execute("UPDATE t SET x=1", "test")
+        assert "Write operations are not allowed" in exc_info.value.to_text()
 
     @pytest.mark.asyncio
     async def test_blocks_delete(self, sql_tool):
-        result = await sql_tool.execute("DELETE FROM t WHERE id=1", "test")
-        assert "Write operations are not allowed" in result
+        with pytest.raises(ToolError) as exc_info:
+            await sql_tool.execute("DELETE FROM t WHERE id=1", "test")
+        assert "Write operations are not allowed" in exc_info.value.to_text()
 
     @pytest.mark.asyncio
     async def test_blocks_drop(self, sql_tool):
-        result = await sql_tool.execute("DROP TABLE t", "test")
-        assert "Write operations are not allowed" in result
+        with pytest.raises(ToolError) as exc_info:
+            await sql_tool.execute("DROP TABLE t", "test")
+        assert "Write operations are not allowed" in exc_info.value.to_text()
 
     @pytest.mark.asyncio
     async def test_blocks_truncate(self, sql_tool):
-        result = await sql_tool.execute("TRUNCATE TABLE t", "test")
-        assert "Write operations are not allowed" in result
+        with pytest.raises(ToolError) as exc_info:
+            await sql_tool.execute("TRUNCATE TABLE t", "test")
+        assert "Write operations are not allowed" in exc_info.value.to_text()
 
     @pytest.mark.asyncio
     async def test_blocks_multi_statement(self, sql_tool):
-        result = await sql_tool.execute("SELECT 1; DROP TABLE t", "test")
-        assert "Multiple SQL statements" in result
+        with pytest.raises(ToolError) as exc_info:
+            await sql_tool.execute("SELECT 1; DROP TABLE t", "test")
+        assert "Multiple SQL statements" in exc_info.value.to_text()
 
     @pytest.mark.asyncio
     async def test_blocks_cte_wrapping_write(self, sql_tool):
-        result = await sql_tool.execute(
-            "WITH cte AS (SELECT 1) INSERT INTO t SELECT * FROM cte", "test"
-        )
-        assert "Write operations are not allowed" in result
-        assert "CTE" in result
+        with pytest.raises(ToolError) as exc_info:
+            await sql_tool.execute(
+                "WITH cte AS (SELECT 1) INSERT INTO t SELECT * FROM cte", "test"
+            )
+        msg = exc_info.value.to_text()
+        assert "Write operations are not allowed" in msg
+        assert "CTE" in msg
 
     @pytest.mark.asyncio
     async def test_allows_select(self, sql_tool):
-        # This will fail at connection level, but should pass read-only check
-        result = await sql_tool.execute("SELECT * FROM t", "test")
-        assert "Write operations are not allowed" not in result
-        assert "Multiple SQL statements" not in result
+        # This will fail at connection level, but must pass the read-only check first.
+        with pytest.raises(ToolError) as exc_info:
+            await sql_tool.execute("SELECT * FROM t", "test")
+        # Error must NOT be a read-only violation
+        assert exc_info.value.code != ErrorCode.READ_ONLY_VIOLATION
 
     @pytest.mark.asyncio
     async def test_allows_cte_select(self, sql_tool):
-        result = await sql_tool.execute("WITH cte AS (SELECT 1 as x) SELECT * FROM cte", "test")
-        assert "Write operations are not allowed" not in result
+        # This will fail at connection level, but must pass the read-only check first.
+        with pytest.raises(ToolError) as exc_info:
+            await sql_tool.execute("WITH cte AS (SELECT 1 as x) SELECT * FROM cte", "test")
+        assert exc_info.value.code != ErrorCode.READ_ONLY_VIOLATION
 
     @pytest.mark.asyncio
     async def test_blocks_merge(self, sql_tool):
-        result = await sql_tool.execute("MERGE INTO t USING s ON t.id=s.id", "test")
-        assert "Write operations are not allowed" in result
+        with pytest.raises(ToolError) as exc_info:
+            await sql_tool.execute("MERGE INTO t USING s ON t.id=s.id", "test")
+        assert "Write operations are not allowed" in exc_info.value.to_text()
 
     @pytest.mark.asyncio
     async def test_blocks_call(self, sql_tool):
-        result = await sql_tool.execute("CALL my_procedure()", "test")
-        assert "Write operations are not allowed" in result
+        with pytest.raises(ToolError) as exc_info:
+            await sql_tool.execute("CALL my_procedure()", "test")
+        assert "Write operations are not allowed" in exc_info.value.to_text()
 
 
 class TestConnectionValidation:
     @pytest.mark.asyncio
     async def test_unknown_connection(self, sql_tool):
-        result = await sql_tool.execute("SELECT 1", "nonexistent")
-        assert "Unknown connection" in result
-        assert "test" in result
+        with pytest.raises(ToolError) as exc_info:
+            await sql_tool.execute("SELECT 1", "nonexistent")
+        msg = exc_info.value.to_text()
+        assert "Unknown connection" in msg
+        assert "test" in msg
 
 
 class TestFormatTable:

@@ -262,6 +262,7 @@ class TestSQLToolConnectorDelegation:
         """When the connector fails, execution falls through to legacy path."""
         from databot.connectors.base import ConnectorType
         from databot.connectors.registry import ConnectorRegistry
+        from databot.tools.errors import ToolError
         from databot.tools.sql import SQLTool
 
         mock_connector = AsyncMock()
@@ -278,14 +279,16 @@ class TestSQLToolConnectorDelegation:
         )
 
         # Legacy path will also fail (no real DB), but the point is
-        # it doesn't short-circuit with the connector error
-        result = await tool.execute(query="SELECT 1", connection="my_db")
-        assert "Error" in result or "error" in result.lower()
+        # it doesn't short-circuit with the connector error — it raises ToolError
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(query="SELECT 1", connection="my_db")
+        assert "Error" in exc_info.value.to_text()
 
     @pytest.mark.asyncio
     async def test_read_only_enforced_before_delegation(self):
         """Read-only checks happen before connector delegation."""
         from databot.connectors.registry import ConnectorRegistry
+        from databot.tools.errors import ToolError
         from databot.tools.sql import SQLTool
 
         registry = ConnectorRegistry()
@@ -295,8 +298,10 @@ class TestSQLToolConnectorDelegation:
             connector_registry=registry,
         )
 
-        result = await tool.execute(query="DROP TABLE users", connection="my_db")
-        assert "read_only" in result.lower() or "not allowed" in result.lower()
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(query="DROP TABLE users", connection="my_db")
+        msg = exc_info.value.to_text().lower()
+        assert "read_only" in msg or "not allowed" in msg
 
 
 # ===================================================================

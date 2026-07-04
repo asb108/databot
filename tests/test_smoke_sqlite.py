@@ -57,9 +57,13 @@ class TestRealSqlite:
         assert "5" in out
 
     async def test_read_only_blocks_write(self, sql_tool):
+        from databot.tools.errors import ToolError
+
         tool, _ = sql_tool
-        out = await tool.execute(query="DELETE FROM orders", connection="wh")
-        assert "read" in out.lower() or "blocked" in out.lower()
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(query="DELETE FROM orders", connection="wh")
+        msg = exc_info.value.to_text().lower()
+        assert "read" in msg or "blocked" in msg
 
     async def test_schema_introspection(self, sql_tool):
         from databot.tools.schema_tool import SchemaTool
