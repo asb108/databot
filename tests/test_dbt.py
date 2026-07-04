@@ -7,6 +7,7 @@ import json
 import pytest
 
 from databot.tools.dbt import DbtTool
+from databot.tools.errors import ToolError
 
 _MANIFEST = {
     "nodes": {
@@ -63,8 +64,9 @@ def manifest_file(tmp_path):
 class TestDbtTool:
     async def test_missing_manifest(self, tmp_path):
         tool = DbtTool(manifest_path=str(tmp_path / "nope.json"))
-        out = await tool.execute(action="list_models")
-        assert "not found" in out
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(action="list_models")
+        assert "not found" in exc_info.value.message
 
     async def test_list_models(self, manifest_file):
         tool = DbtTool(manifest_path=manifest_file)

@@ -16,6 +16,7 @@ from typing import Any
 from loguru import logger
 
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 
 class DbtTool(BaseTool):
@@ -109,7 +110,7 @@ class DbtTool(BaseTool):
     async def execute(self, action: str, name: str = "", **kwargs: Any) -> str:
         err = self._load()
         if err:
-            return f"Error: {err}"
+            raise ToolError(ErrorCode.NOT_CONFIGURED, err)
 
         if action == "list_models":
             return self._list_models()
@@ -121,13 +122,13 @@ class DbtTool(BaseTool):
             return self._search(name)
         if action in ("get_model", "lineage"):
             if not name:
-                return f"Error: 'name' is required for {action}."
+                raise ToolError(ErrorCode.INVALID_ARGUMENT, f"'name' is required for {action}.")
             resolved = self._resolve_model(name)
             if resolved is None:
                 return f"No dbt model named '{name}'. Try `list_models` or `search`."
             uid, node = resolved
             return self._get_model(uid, node) if action == "get_model" else self._lineage(uid, node)
-        return f"Error: unknown action '{action}'."
+        raise ToolError(ErrorCode.INVALID_ARGUMENT, f"unknown action '{action}'.")
 
     def _list_models(self) -> str:
         models = [n for n in self._nodes().values() if n.get("resource_type") == "model"]
@@ -212,7 +213,9 @@ class DbtTool(BaseTool):
 
     def _search(self, term: str) -> str:
         if not term:
-            return "Error: 'name' (search term) is required for search."
+            raise ToolError(
+                ErrorCode.INVALID_ARGUMENT, "'name' (search term) is required for search."
+            )
         t = term.lower()
         hits = []
         for n in self._nodes().values():
