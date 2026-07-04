@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import pytest
+
 from databot.connectors.base import ConnectorResult, ConnectorType
 from databot.providers.base import LLMResponse
+from databot.tools.errors import ToolError
 from databot.tools.nl_to_sql import NLToSQLTool, _is_read_only, _strip_sql
 from databot.tools.schema_tool import SchemaTool
 
@@ -89,8 +92,9 @@ class TestSchemaTool:
 
     async def test_describe_table_requires_table(self):
         tool = SchemaTool(connector_registry=_Registry(_FakeSQLConnector([], {})))
-        out = await tool.execute(action="describe_table", connection="wh")
-        assert "required" in out
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(action="describe_table", connection="wh")
+        assert "required" in exc_info.value.message
 
     async def test_describe_table(self):
         conn = _FakeSQLConnector(["orders"], {"orders": [("id", "int"), ("amt", "decimal")]})

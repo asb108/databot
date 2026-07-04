@@ -13,6 +13,7 @@ from typing import Any
 
 from databot.connectors.identifiers import IdentifierError, validate_identifier
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 
 class SchemaTool(BaseTool):
@@ -79,7 +80,7 @@ class SchemaTool(BaseTool):
         **kwargs: Any,
     ) -> str:
         if action == "describe_table" and not table:
-            return "Error: 'table' is required for describe_table."
+            raise ToolError(ErrorCode.INVALID_ARGUMENT, "'table' is required for describe_table.")
 
         connector = self._sql_connector(connection)
         if connector is not None:
@@ -101,13 +102,14 @@ class SchemaTool(BaseTool):
         result = await connector.execute(op, **{k: v for k, v in params.items() if v})
         if result.success:
             return result.to_markdown_table()
-        return f"Error: {result.error}"
+        raise ToolError(ErrorCode.CONNECTION_ERROR, str(result.error), retryable=True)
 
     async def _via_sql_fallback(self, connection: str, action: str, table: str, schema: str) -> str:
         if not self._sql:
-            return (
-                f"Error: connection '{connection}' is not connector-backed and no SQL "
-                "tool is available for schema introspection."
+            raise ToolError(
+                ErrorCode.NOT_CONFIGURED,
+                f"connection '{connection}' is not connector-backed and no SQL "
+                "tool is available for schema introspection.",
             )
         try:
             if action == "list_databases":
@@ -132,5 +134,5 @@ class SchemaTool(BaseTool):
                     f"WHERE table_name = '{tbl}' ORDER BY ordinal_position"
                 )
         except IdentifierError as e:
-            return f"Error: {e}"
+            raise ToolError(ErrorCode.INVALID_ARGUMENT, str(e))
         return await self._sql.execute(query=query, connection=connection)
