@@ -7,6 +7,7 @@ from typing import Any
 from databot.connectors.registry import ConnectorRegistry
 from databot.connectors.spark_connector import SparkConnector
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 
 class SparkTool(BaseTool):
@@ -108,12 +109,10 @@ class SparkTool(BaseTool):
 
     async def execute(self, action: str, connector: str = "", **kwargs: Any) -> str:
         spark = self._resolve_connector(connector)
-        if isinstance(spark, str):
-            return spark  # Error message
 
         result = await spark.execute(action, **kwargs)
         if not result.success:
-            return f"Error: {result.error}"
+            raise ToolError(ErrorCode.CONNECTION_ERROR, str(result.error), retryable=True)
         if result.columns and result.rows:
             return result.to_markdown_table()
         if result.data is not None:
@@ -124,23 +123,27 @@ class SparkTool(BaseTool):
             return json.dumps(result.data, indent=2, default=str)
         return "OK"
 
-    def _resolve_connector(self, name: str) -> SparkConnector | str:
+    def _resolve_connector(self, name: str) -> SparkConnector:
         """Resolve connector by name, or pick the only one if unambiguous."""
         if name:
             conn = self._registry.get(name)
             if conn is None:
-                return f"Error: Spark connector '{name}' not found."
+                raise ToolError(ErrorCode.NOT_FOUND, f"Spark connector '{name}' not found.")
             if not isinstance(conn, SparkConnector):
-                return f"Error: Connector '{name}' is not a Spark connector."
+                raise ToolError(
+                    ErrorCode.INVALID_ARGUMENT,
+                    f"Connector '{name}' is not a Spark connector.",
+                )
             return conn
 
         # Auto-select if only one spark connector exists
         spark_connectors = [c for c in self._registry.list_all() if isinstance(c, SparkConnector)]
         if len(spark_connectors) == 0:
-            return "Error: No Spark connectors configured."
+            raise ToolError(ErrorCode.NOT_CONFIGURED, "No Spark connectors configured.")
         if len(spark_connectors) == 1:
             return spark_connectors[0]
         names = ", ".join(c.name for c in spark_connectors)
-        return (
-            f"Error: Multiple Spark connectors configured ({names}). Specify 'connector' parameter."
+        raise ToolError(
+            ErrorCode.INVALID_ARGUMENT,
+            f"Multiple Spark connectors configured ({names}). Specify 'connector' parameter.",
         )
