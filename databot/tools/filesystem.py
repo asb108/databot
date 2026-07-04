@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 
 class _FSBase(BaseTool):
@@ -17,7 +18,9 @@ class _FSBase(BaseTool):
     def _validate_path(self, path: str) -> Path:
         p = Path(path).resolve()
         if self._allowed_dir and not str(p).startswith(str(self._allowed_dir.resolve())):
-            raise PermissionError(f"Path '{path}' is outside the allowed workspace")
+            raise ToolError(
+                ErrorCode.PERMISSION_DENIED, f"Path '{path}' is outside the allowed workspace."
+            )
         return p
 
 
@@ -51,7 +54,7 @@ class ReadFileTool(_FSBase):
         try:
             p = self._validate_path(path)
             if not p.exists():
-                return f"Error: File '{path}' does not exist"
+                raise ToolError(ErrorCode.NOT_FOUND, f"File '{path}' does not exist.")
 
             with open(p) as f:
                 lines = f.readlines()
@@ -69,10 +72,10 @@ class ReadFileTool(_FSBase):
                 return "(empty file)"
 
             return "".join(lines)
-        except PermissionError as e:
-            return str(e)
+        except ToolError:
+            raise
         except Exception as e:
-            return f"Error reading file: {str(e)}"
+            raise ToolError(ErrorCode.INTERNAL_ERROR, f"reading file: {e}")
 
 
 class WriteFileTool(_FSBase):
@@ -101,10 +104,10 @@ class WriteFileTool(_FSBase):
             with open(p, "w") as f:
                 f.write(content)
             return f"Successfully wrote {len(content)} bytes to {path}"
-        except PermissionError as e:
-            return str(e)
+        except ToolError:
+            raise
         except Exception as e:
-            return f"Error writing file: {str(e)}"
+            raise ToolError(ErrorCode.INTERNAL_ERROR, f"writing file: {e}")
 
 
 class EditFileTool(_FSBase):
@@ -134,22 +137,25 @@ class EditFileTool(_FSBase):
         try:
             p = self._validate_path(path)
             if not p.exists():
-                return f"Error: File '{path}' does not exist"
+                raise ToolError(ErrorCode.NOT_FOUND, f"File '{path}' does not exist.")
 
             content = p.read_text()
             count = content.count(old_string)
             if count == 0:
-                return "Error: old_string not found in file"
+                raise ToolError(ErrorCode.NOT_FOUND, "old_string not found in file.")
             if count > 1:
-                return f"Error: old_string found {count} times; must be unique"
+                raise ToolError(
+                    ErrorCode.INVALID_ARGUMENT,
+                    f"old_string found {count} times; must be unique.",
+                )
 
             new_content = content.replace(old_string, new_string, 1)
             p.write_text(new_content)
             return f"Successfully edited {path}"
-        except PermissionError as e:
-            return str(e)
+        except ToolError:
+            raise
         except Exception as e:
-            return f"Error editing file: {str(e)}"
+            raise ToolError(ErrorCode.INTERNAL_ERROR, f"editing file: {e}")
 
 
 class ListDirTool(_FSBase):
@@ -174,7 +180,7 @@ class ListDirTool(_FSBase):
         try:
             p = self._validate_path(path)
             if not p.is_dir():
-                return f"Error: '{path}' is not a directory"
+                raise ToolError(ErrorCode.INVALID_ARGUMENT, f"'{path}' is not a directory.")
 
             entries = sorted(p.iterdir())
             lines = []
@@ -187,7 +193,7 @@ class ListDirTool(_FSBase):
             if not lines:
                 return "(empty directory)"
             return "\n".join(lines)
-        except PermissionError as e:
-            return str(e)
+        except ToolError:
+            raise
         except Exception as e:
-            return f"Error listing directory: {str(e)}"
+            raise ToolError(ErrorCode.INTERNAL_ERROR, f"listing directory: {e}")
