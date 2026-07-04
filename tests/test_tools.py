@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from databot.tools.base import BaseTool, ToolRegistry
+from databot.tools.errors import ToolError
 from databot.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from databot.tools.shell import ShellTool
 
@@ -132,14 +133,16 @@ class TestReadFileTool:
     @pytest.mark.asyncio
     async def test_read_nonexistent(self, tmp_workspace):
         tool = ReadFileTool(allowed_dir=tmp_workspace)
-        result = await tool.execute(path=str(tmp_workspace / "nope.txt"))
-        assert "does not exist" in result
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(path=str(tmp_workspace / "nope.txt"))
+        assert "does not exist" in exc_info.value.message
 
     @pytest.mark.asyncio
     async def test_read_outside_workspace(self, tmp_workspace):
         tool = ReadFileTool(allowed_dir=tmp_workspace)
-        result = await tool.execute(path="/etc/passwd")
-        assert "outside" in result
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(path="/etc/passwd")
+        assert "outside" in exc_info.value.message
 
 
 class TestWriteFileTool:
@@ -165,8 +168,9 @@ class TestEditFileTool:
     async def test_edit_not_found(self, tmp_workspace):
         tool = EditFileTool(allowed_dir=tmp_workspace)
         path = str(tmp_workspace / "test.txt")
-        result = await tool.execute(path=path, old_string="nonexistent", new_string="replacement")
-        assert "not found" in result
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(path=path, old_string="nonexistent", new_string="replacement")
+        assert "not found" in exc_info.value.message
 
 
 class TestListDirTool:
@@ -198,14 +202,16 @@ class TestShellTool:
             timeout=10,
             allowed_commands=["ls"],
         )
-        result = await tool.execute(command="echo hello")
-        assert "not in the allowed list" in result
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(command="echo hello")
+        assert "not in the allowed list" in exc_info.value.message
 
     @pytest.mark.asyncio
     async def test_timeout(self, tmp_workspace):
         tool = ShellTool(working_dir=str(tmp_workspace), timeout=1)
-        result = await tool.execute(command="sleep 10")
-        assert "timed out" in result
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(command="sleep 10")
+        assert "timed out" in exc_info.value.message
 
     @pytest.mark.asyncio
     async def test_allowlist_blocks_chaining(self, tmp_workspace):
@@ -217,8 +223,9 @@ class TestShellTool:
             allowed_commands=["echo"],
         )
         for payload in ["echo hi; rm -rf x", "echo hi && id", "echo $(id)", "echo hi | cat"]:
-            result = await tool.execute(command=payload)
-            assert "not permitted" in result, payload
+            with pytest.raises(ToolError) as exc_info:
+                await tool.execute(command=payload)
+            assert "not permitted" in exc_info.value.message, payload
 
     @pytest.mark.asyncio
     async def test_allowlist_runs_via_argv(self, tmp_workspace):
@@ -241,5 +248,6 @@ class TestShellTool:
             timeout=10,
             allowed_commands=["echo"],
         )
-        rejected = await tool.execute(command="cat /etc/passwd")
-        assert "not in the allowed list" in rejected
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(command="cat /etc/passwd")
+        assert "not in the allowed list" in exc_info.value.message

@@ -10,6 +10,7 @@ import pytest
 from databot.audit import AuditLog, configure_audit_log, get_audit_log
 from databot.connectors.base import ConnectorResult, ConnectorType
 from databot.tools.base import BaseTool, ToolRegistry
+from databot.tools.errors import ToolError
 from databot.tools.export import ExportTool
 
 
@@ -113,10 +114,12 @@ class TestExportTool:
     async def test_rejects_unsafe_filename(self, tmp_path, bad):
         result = ConnectorResult(success=True, columns=["id"], rows=[[1]])
         tool = self._tool(tmp_path, result)
-        out = await tool.execute(connection="wh", query="SELECT 1", filename=bad)
-        assert "invalid filename" in out
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(connection="wh", query="SELECT 1", filename=bad)
+        assert "invalid filename" in exc_info.value.message
 
     async def test_requires_connector(self, tmp_path):
         tool = ExportTool(connector_registry=None, workspace=tmp_path)
-        out = await tool.execute(connection="wh", query="SELECT 1", filename="x.csv")
-        assert "connector-backed" in out
+        with pytest.raises(ToolError) as exc_info:
+            await tool.execute(connection="wh", query="SELECT 1", filename="x.csv")
+        assert "connector-backed" in exc_info.value.message
