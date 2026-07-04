@@ -7,6 +7,7 @@ from typing import Any
 from databot.connectors.catalog_connector import CatalogConnector
 from databot.connectors.registry import ConnectorRegistry
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 
 class CatalogTool(BaseTool):
@@ -80,12 +81,10 @@ class CatalogTool(BaseTool):
 
     async def execute(self, action: str, connector: str = "", **kwargs: Any) -> str:
         cat = self._resolve_connector(connector)
-        if isinstance(cat, str):
-            return cat  # Error message
 
         result = await cat.execute(action, **kwargs)
         if not result.success:
-            return f"Error: {result.error}"
+            raise ToolError(ErrorCode.CONNECTION_ERROR, str(result.error), retryable=True)
         if result.columns and result.rows:
             return result.to_markdown_table()
         if result.data is not None:
@@ -96,20 +95,26 @@ class CatalogTool(BaseTool):
             return json.dumps(result.data, indent=2, default=str)
         return "OK"
 
-    def _resolve_connector(self, name: str) -> CatalogConnector | str:
+    def _resolve_connector(self, name: str) -> CatalogConnector:
         """Resolve connector by name, or pick the only one if unambiguous."""
         if name:
             conn = self._registry.get(name)
             if conn is None:
-                return f"Error: Catalog connector '{name}' not found."
+                raise ToolError(ErrorCode.NOT_FOUND, f"Catalog connector '{name}' not found.")
             if not isinstance(conn, CatalogConnector):
-                return f"Error: Connector '{name}' is not a Catalog connector."
+                raise ToolError(
+                    ErrorCode.INVALID_ARGUMENT,
+                    f"Connector '{name}' is not a Catalog connector.",
+                )
             return conn
 
         cat_connectors = [c for c in self._registry.list_all() if isinstance(c, CatalogConnector)]
         if len(cat_connectors) == 0:
-            return "Error: No catalog connectors configured."
+            raise ToolError(ErrorCode.NOT_CONFIGURED, "No catalog connectors configured.")
         if len(cat_connectors) == 1:
             return cat_connectors[0]
         names = ", ".join(c.name for c in cat_connectors)
-        return f"Error: Multiple catalog connectors configured ({names}). Specify 'connector' parameter."
+        raise ToolError(
+            ErrorCode.INVALID_ARGUMENT,
+            f"Multiple catalog connectors configured ({names}). Specify 'connector' parameter.",
+        )
