@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `_build_components` now returns a 14-tuple (adds the slash-command handler).
 - New skills: `visualization`, `monitoring` (default-enabled); `dbt`. `sql_analytics` gains `text_to_sql`, `describe_schema`, `profile_data`, `export_query`, `saved_query`.
 
+### Changed — Reliability
+- **Structured tool errors** (`databot.tools.errors`) — tools now `raise ToolError(code, message, hint, retryable)` instead of returning ad-hoc `"Error: …"` strings. `ToolRegistry.execute` renders one consistent `Error [code]: …` string for the model and records the error `code` as the audit/metrics `status` (previously a generic value or, for error *returns*, incorrectly `"ok"`), so `GET /api/v1/audit` and the `databot_tool_calls_total{status}` metric are now grouped by error code. `execute` still returns `str`, so the agent loop, multi-agent path, and MCP callers are unchanged. In-process tool composition (data-quality/profiling/monitors calling the SQL tool) is guarded so a structured error can't escape and break graceful degradation.
+- **Gateway app factory** — the FastAPI app moved out of the `gateway` command into a testable `build_api(...)` factory (`databot.cli.api`); HTTP-level tests now cover `/livez`, `/readyz`, `/metrics`, `/usage`, `/audit`, `/monitors`, `/queries`. Behavior-preserving.
+
 ### Added — Channels & testing
 - **WhatsApp webhook signature verification** — the `/webhooks/whatsapp` POST handler now verifies Meta's `X-Hub-Signature-256` (HMAC-SHA256 of the raw body keyed by `app_secret`); enforced when `app_secret` is set, skipped otherwise for back-compat.
 - **Real-database smoke test** (`tests/test_smoke_sqlite.py`) — exercises the SQL connector + new tools (query, read-only enforcement, schema introspection, profiling, export, saved query, monitor, data quality, NL-to-SQL grounding, audit) against an actual SQLite file, not mocks.
