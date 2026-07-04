@@ -12,6 +12,7 @@ import httpx
 from loguru import logger
 
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 
 class TicketTool(BaseTool):
@@ -97,19 +98,28 @@ class TicketTool(BaseTool):
 
         # Real HTTP Implementation (Generic)
         if not self.api_url or not self.api_token:
-            return "Error: Ticket API URL or Token not configured in environment (TICKET_API_URL, TICKET_API_TOKEN)."
+            raise ToolError(
+                ErrorCode.NOT_CONFIGURED,
+                "Ticket API URL or Token not configured in environment (TICKET_API_URL, TICKET_API_TOKEN).",
+            )
 
         try:
             return await self._execute_http(action, kwargs)
+        except ToolError:
+            raise
         except Exception as e:
             logger.error(f"Ticket HTTP Error: {e}")
-            return f"Error communicating with ticket system: {e}"
+            raise ToolError(
+                ErrorCode.CONNECTION_ERROR,
+                f"Error communicating with ticket system: {e}",
+                retryable=True,
+            )
 
     def _execute_mock(self, action: str, kwargs: Dict[str, Any]) -> str:
         if action == "get_ticket":
             ticket_id = kwargs.get("ticket_id")
             if not ticket_id:
-                return "Error: ticket_id is required for get_ticket."
+                raise ToolError(ErrorCode.INVALID_ARGUMENT, "ticket_id is required for get_ticket.")
             ticket = self._mock_tickets.get(ticket_id)
             if not ticket:
                 return f"Ticket {ticket_id} not found."
@@ -118,7 +128,9 @@ class TicketTool(BaseTool):
         elif action == "update_ticket":
             ticket_id = kwargs.get("ticket_id")
             if not ticket_id:
-                return "Error: ticket_id is required for update_ticket."
+                raise ToolError(
+                    ErrorCode.INVALID_ARGUMENT, "ticket_id is required for update_ticket."
+                )
             ticket = self._mock_tickets.get(ticket_id)
             if not ticket:
                 return f"Ticket {ticket_id} not found."
@@ -136,7 +148,9 @@ class TicketTool(BaseTool):
         elif action == "create_ticket":
             summary = kwargs.get("summary")
             if not summary:
-                return "Error: summary is required for create_ticket."
+                raise ToolError(
+                    ErrorCode.INVALID_ARGUMENT, "summary is required for create_ticket."
+                )
 
             ticket_id = f"TKT-{self._mock_counter}"
             self._mock_counter += 1
@@ -151,7 +165,7 @@ class TicketTool(BaseTool):
             self._mock_tickets[ticket_id] = new_ticket
             return f"Ticket created successfully: {json.dumps(new_ticket)}"
 
-        return f"Error: Unknown action '{action}'"
+        raise ToolError(ErrorCode.INVALID_ARGUMENT, f"Unknown action '{action}'.")
 
     async def _execute_http(self, action: str, kwargs: Dict[str, Any]) -> str:
         """Generic HTTP implementation. Can be tailored for Jira/Zendesk."""
