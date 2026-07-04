@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 if TYPE_CHECKING:
     from databot.cron.service import CronService
@@ -63,17 +64,19 @@ class CronTool(BaseTool):
             schedule = kwargs.get("schedule", "")
             message = kwargs.get("message", "")
             if not all([name, schedule, message]):
-                return "Error: 'add' requires name, schedule, and message."
+                raise ToolError(
+                    ErrorCode.INVALID_ARGUMENT, "'add' requires name, schedule, and message."
+                )
             try:
                 job_id = self._cron.add_job(name, schedule, message)
                 return f"Created job '{name}' (ID: {job_id}) with schedule '{schedule}'"
             except ValueError as e:
-                return f"Error: {e}"
+                raise ToolError(ErrorCode.INVALID_ARGUMENT, str(e))
 
         elif action == "remove":
             job_id = kwargs.get("job_id", "")
             if not job_id:
-                return "Error: 'remove' requires job_id."
+                raise ToolError(ErrorCode.INVALID_ARGUMENT, "'remove' requires job_id.")
             if self._cron.remove_job(job_id):
                 return f"Removed job {job_id}"
             return f"Job {job_id} not found."
