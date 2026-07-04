@@ -7,6 +7,7 @@ from typing import Any
 import httpx
 
 from databot.tools.base import BaseTool
+from databot.tools.errors import ErrorCode, ToolError
 
 
 class AirflowTool(BaseTool):
@@ -74,7 +75,7 @@ class AirflowTool(BaseTool):
 
     async def execute(self, action: str, **kwargs: Any) -> str:
         if not self._base_url:
-            return "Error: Airflow base_url not configured."
+            raise ToolError(ErrorCode.NOT_CONFIGURED, "Airflow base_url not configured.")
 
         try:
             if action == "list_dags":
@@ -82,30 +83,38 @@ class AirflowTool(BaseTool):
             elif action == "dag_runs":
                 dag_id = kwargs.get("dag_id", "")
                 if not dag_id:
-                    return "Error: dag_id is required for dag_runs."
+                    raise ToolError(ErrorCode.INVALID_ARGUMENT, "dag_id is required for dag_runs.")
                 return await self._dag_runs(dag_id, kwargs.get("limit", 10))
             elif action == "task_status":
                 dag_id = kwargs.get("dag_id", "")
                 run_id = kwargs.get("run_id", "")
                 if not dag_id or not run_id:
-                    return "Error: dag_id and run_id are required for task_status."
+                    raise ToolError(
+                        ErrorCode.INVALID_ARGUMENT,
+                        "dag_id and run_id are required for task_status.",
+                    )
                 return await self._task_status(dag_id, run_id)
             elif action == "task_log":
                 dag_id = kwargs.get("dag_id", "")
                 run_id = kwargs.get("run_id", "")
                 task_id = kwargs.get("task_id", "")
                 if not all([dag_id, run_id, task_id]):
-                    return "Error: dag_id, run_id, and task_id are required for task_log."
+                    raise ToolError(
+                        ErrorCode.INVALID_ARGUMENT,
+                        "dag_id, run_id, and task_id are required for task_log.",
+                    )
                 return await self._task_log(dag_id, run_id, task_id)
             elif action == "trigger":
                 dag_id = kwargs.get("dag_id", "")
                 if not dag_id:
-                    return "Error: dag_id is required for trigger."
+                    raise ToolError(ErrorCode.INVALID_ARGUMENT, "dag_id is required for trigger.")
                 return await self._trigger(dag_id)
             else:
                 return f"Unknown action: {action}"
+        except ToolError:
+            raise
         except Exception as e:
-            return f"Airflow API error: {str(e)}"
+            raise ToolError(ErrorCode.CONNECTION_ERROR, f"Airflow API error: {e}", retryable=True)
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> dict:
         """Make an authenticated request to the Airflow API.
