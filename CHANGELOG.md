@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   A 4xx response counts as reachable and never trips it. On by default; configure or
   disable via a connector's `circuit_breaker` config (`enabled`, `failure_threshold`,
   `recovery_timeout`).
+- **Message chunking across channels:** outbound replies longer than a channel's
+  length limit are now split into multiple in-limit messages instead of being silently
+  dropped. A shared `split_message` helper (`databot/channels/chunking.py`) splits on
+  newline boundaries, hard-cuts overlong lines, and caps output at 10 chunks with a
+  "…(response truncated)" notice. Applied to Telegram (4096), WhatsApp (4096), Google
+  Chat (4096), and Slack (40000); Discord's existing splitter now uses the shared helper.
 
 ### Added — Channels & testing
 - **WhatsApp webhook signature verification** — the `/webhooks/whatsapp` POST handler now verifies Meta's `X-Hub-Signature-256` (HMAC-SHA256 of the raw body keyed by `app_secret`); enforced when `app_secret` is set, skipped otherwise for back-compat.
