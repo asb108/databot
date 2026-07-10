@@ -30,6 +30,7 @@ from loguru import logger
 
 from databot.channels.base import BaseChannel
 from databot.core.bus import InboundMessage, MessageBus, OutboundMessage
+from databot.core.error_ux import render_user_error
 
 _TG_API_BASE = "https://api.telegram.org"
 
@@ -237,7 +238,7 @@ class TelegramChannel(BaseChannel):
                 )
             except Exception as e:
                 logger.error(f"Telegram: error processing message: {e}")
-                await self.send(chat_id, "Sorry, I encountered an error processing your request.")
+                await self.send(chat_id, render_user_error(e))
         else:
             # Fallback: publish to bus (async)
             await self.bus.publish_inbound(inbound)

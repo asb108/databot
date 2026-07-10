@@ -9,6 +9,7 @@ from loguru import logger
 
 from databot.channels.base import BaseChannel
 from databot.core.bus import InboundMessage, MessageBus, OutboundMessage
+from databot.core.error_ux import render_user_error
 
 
 class GChatChannel(BaseChannel):
@@ -145,7 +146,7 @@ class GChatChannel(BaseChannel):
                         }
                     except Exception as e:
                         logger.error(f"GChat: error processing message: {e}")
-                        return {"text": "Sorry, I encountered an error processing your request."}
+                        return {"text": render_user_error(e)}
                 else:
                     # Fallback: publish to bus (async, response via webhook)
                     await self.bus.publish_inbound(inbound)
