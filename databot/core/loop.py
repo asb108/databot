@@ -11,6 +11,7 @@ from loguru import logger
 
 from databot.core.bus import InboundMessage, MessageBus, OutboundMessage, StreamEvent
 from databot.core.context import ContextBuilder
+from databot.core.error_ux import render_user_error
 from databot.core.tokens import fit_messages_to_budget, get_context_window
 from databot.memory.manager import MemoryManager
 from databot.providers.base import LLMProvider
@@ -84,11 +85,7 @@ class AgentLoop:
                         await self.bus.publish_outbound(response)
                 except Exception as e:
                     logger.error(f"Error processing message: {e}")
-                    # Sanitize error message to avoid leaking internals
-                    safe_msg = (
-                        "Sorry, I encountered an internal error. "
-                        "Please try again or contact an administrator."
-                    )
+                    safe_msg = render_user_error(e)
                     await self.bus.publish_outbound(
                         OutboundMessage(
                             channel=msg.channel,
@@ -273,7 +270,26 @@ class AgentLoop:
         return response.content if response else ""
 
     async def process_message_stream(self, msg: InboundMessage) -> AsyncIterator[StreamEvent]:
-        """Process a message with streaming — yields StreamEvent for SSE delivery."""
+        """Process a message with streaming — yields StreamEvent for SSE delivery.
+
+        Never raises to the caller: on failure it yields a single sanitized
+        ``error`` event (via ``render_user_error``) and stops.
+        """
+        try:
+            async for event in self._process_message_stream_inner(msg):
+                yield event
+        except Exception as e:
+            logger.error(f"Streaming error: {e}")
+            yield StreamEvent(
+                channel=msg.channel,
+                chat_id=msg.chat_id,
+                event_type="error",
+                data=render_user_error(e),
+            )
+
+    async def _process_message_stream_inner(
+        self, msg: InboundMessage
+    ) -> AsyncIterator[StreamEvent]:
         logger.info(f"Processing streaming message from {msg.channel}:{msg.sender_id}")
 
         # Deterministic slash commands bypass the LLM entirely.
