@@ -8,12 +8,15 @@ from fastapi import APIRouter, Request
 from loguru import logger
 
 from databot.channels.base import BaseChannel
+from databot.channels.chunking import split_message
 from databot.core.bus import InboundMessage, MessageBus, OutboundMessage
 from databot.core.error_ux import render_user_error
 
 
 class GChatChannel(BaseChannel):
     """Google Chat integration supporting webhook (send-only) and app (bidirectional) modes."""
+
+    MAX_MESSAGE_LENGTH = 4096
 
     def __init__(
         self,
@@ -66,20 +69,20 @@ class GChatChannel(BaseChannel):
             logger.warning("Google Chat webhook URL not configured")
             return
 
-        payload: dict[str, Any] = {"text": content}
-        if thread_id:
-            payload["thread"] = {"threadKey": thread_id}
-            payload["messageReplyOption"] = "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
-
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.post(
-                    url,
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                )
-                resp.raise_for_status()
-                logger.debug("Message sent to Google Chat")
+                for chunk in split_message(content, self.MAX_MESSAGE_LENGTH):
+                    payload: dict[str, Any] = {"text": chunk}
+                    if thread_id:
+                        payload["thread"] = {"threadKey": thread_id}
+                        payload["messageReplyOption"] = "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
+                    resp = await client.post(
+                        url,
+                        json=payload,
+                        headers={"Content-Type": "application/json"},
+                    )
+                    resp.raise_for_status()
+            logger.debug("Message sent to Google Chat")
         except Exception as e:
             logger.error(f"Failed to send to Google Chat: {e}")
 

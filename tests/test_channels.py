@@ -7,6 +7,28 @@ import pytest
 from databot.core.bus import MessageBus
 
 
+class _RecordingHTTPClient:
+    """Fake httpx.AsyncClient context manager that records POST kwargs."""
+
+    def __init__(self, calls):
+        self._calls = calls
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def post(self, url, **kwargs):
+        self._calls.append(kwargs)
+
+        class _Resp:
+            def raise_for_status(self):
+                return None
+
+        return _Resp()
+
+
 class TestGChatChannel:
     def test_channel_name(self):
         from databot.channels.gchat import GChatChannel
@@ -461,3 +483,95 @@ class TestChannelsConfigIncludesNewChannels:
         loaded = DatabotConfig.load(path)
         assert loaded.channels.whatsapp.access_token == "secret-wa"
         assert loaded.channels.telegram.bot_token == "secret-tg"
+
+
+class TestChannelChunking:
+    @pytest.mark.asyncio
+    async def test_telegram_send_chunks_long_message(self, monkeypatch):
+        from databot.channels import telegram as tg_mod
+        from databot.channels.telegram import TelegramChannel
+
+        calls: list = []
+        monkeypatch.setattr(
+            tg_mod.httpx, "AsyncClient", lambda *a, **k: _RecordingHTTPClient(calls)
+        )
+        channel = TelegramChannel(bus=MessageBus(), bot_token="fake:token")
+        long_content = "\n".join("x" * 4000 for _ in range(3))  # ~12000 chars > 4096
+        await channel.send("123", long_content)
+
+        assert len(calls) >= 2
+        for c in calls:
+            assert len(c["json"]["text"]) <= TelegramChannel.MAX_MESSAGE_LENGTH
+
+    @pytest.mark.asyncio
+    async def test_whatsapp_send_chunks_long_message(self, monkeypatch):
+        from databot.channels import whatsapp as wa_mod
+        from databot.channels.whatsapp import WhatsAppChannel
+
+        calls: list = []
+        monkeypatch.setattr(
+            wa_mod.httpx, "AsyncClient", lambda *a, **k: _RecordingHTTPClient(calls)
+        )
+        channel = WhatsAppChannel(
+            bus=MessageBus(), phone_number_id="123", access_token="tok"
+        )
+        long_content = "\n".join("x" * 4000 for _ in range(3))
+        await channel.send("628123", long_content)
+
+        assert len(calls) >= 2
+        for c in calls:
+            assert len(c["json"]["text"]["body"]) <= WhatsAppChannel.MAX_MESSAGE_LENGTH
+
+    @pytest.mark.asyncio
+    async def test_gchat_send_chunks_long_message(self, monkeypatch):
+        from databot.channels import gchat as gc_mod
+        from databot.channels.gchat import GChatChannel
+
+        calls: list = []
+        monkeypatch.setattr(
+            gc_mod.httpx, "AsyncClient", lambda *a, **k: _RecordingHTTPClient(calls)
+        )
+        channel = GChatChannel(bus=MessageBus(), webhook_url="https://example.com/hook")
+        long_content = "\n".join("x" * 4000 for _ in range(3))
+        await channel.send("space", long_content)
+
+        assert len(calls) >= 2
+        for c in calls:
+            assert len(c["json"]["text"]) <= GChatChannel.MAX_MESSAGE_LENGTH
+
+    @pytest.mark.asyncio
+    async def test_slack_send_chunks_long_message(self):
+        from unittest.mock import AsyncMock
+
+        from databot.channels.slack import SlackChannel
+
+        channel = SlackChannel(bus=MessageBus(), bot_token="xoxb-fake")
+        channel._client = AsyncMock()
+        long_content = "y" * 90000  # > 40000, no newlines -> hard-cut
+        await channel.send("C123", long_content)
+
+        posts = channel._client.chat_postMessage.call_args_list
+        assert len(posts) >= 2
+        for call in posts:
+            assert len(call.kwargs["text"]) <= SlackChannel.MAX_MESSAGE_LENGTH
+
+    @pytest.mark.asyncio
+    async def test_discord_send_chunks_long_message(self):
+        pytest.importorskip("discord")
+        from unittest.mock import AsyncMock, MagicMock
+
+        from databot.channels.discord import DiscordChannel
+
+        channel = DiscordChannel(bus=MessageBus(), bot_token="fake")
+        fake_channel = MagicMock()
+        fake_channel.send = AsyncMock()
+        channel._client = MagicMock()
+        channel._client.get_channel = MagicMock(return_value=fake_channel)
+
+        long_content = "a" * 5000  # > 2000 -> 3 chunks
+        await channel.send("123456", long_content)
+
+        posts = fake_channel.send.call_args_list
+        assert len(posts) == 3
+        for call in posts:
+            assert len(call.args[0]) <= DiscordChannel.MAX_MESSAGE_LENGTH

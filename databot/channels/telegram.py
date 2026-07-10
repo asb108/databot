@@ -29,6 +29,7 @@ from fastapi import APIRouter, Request
 from loguru import logger
 
 from databot.channels.base import BaseChannel
+from databot.channels.chunking import split_message
 from databot.core.bus import InboundMessage, MessageBus, OutboundMessage
 from databot.core.error_ux import render_user_error
 
@@ -37,6 +38,8 @@ _TG_API_BASE = "https://api.telegram.org"
 
 class TelegramChannel(BaseChannel):
     """Telegram Bot API integration with webhook and polling modes."""
+
+    MAX_MESSAGE_LENGTH = 4096
 
     def __init__(
         self,
@@ -121,19 +124,19 @@ class TelegramChannel(BaseChannel):
             return
 
         url = f"{self._api_url}/sendMessage"
-        payload: dict[str, Any] = {
-            "chat_id": chat_id,
-            "text": content,
-            "parse_mode": "Markdown",
-        }
-        if thread_id:
-            payload["reply_to_message_id"] = thread_id
-
         try:
             async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.post(url, json=payload)
-                resp.raise_for_status()
-                logger.debug(f"Message sent to Telegram chat {chat_id}")
+                for chunk in split_message(content, self.MAX_MESSAGE_LENGTH):
+                    payload: dict[str, Any] = {
+                        "chat_id": chat_id,
+                        "text": chunk,
+                        "parse_mode": "Markdown",
+                    }
+                    if thread_id:
+                        payload["reply_to_message_id"] = thread_id
+                    resp = await client.post(url, json=payload)
+                    resp.raise_for_status()
+            logger.debug(f"Message sent to Telegram chat {chat_id}")
         except Exception as e:
             logger.error(f"Failed to send Telegram message: {e}")
 

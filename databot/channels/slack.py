@@ -8,6 +8,7 @@ from typing import Any
 from loguru import logger
 
 from databot.channels.base import BaseChannel
+from databot.channels.chunking import split_message
 from databot.core.bus import InboundMessage, MessageBus, OutboundMessage
 
 
@@ -28,6 +29,8 @@ class SlackChannel(BaseChannel):
             app_token: "xapp-..."  # Required for Socket Mode
             signing_secret: "..."
     """
+
+    MAX_MESSAGE_LENGTH = 40000
 
     def __init__(
         self,
@@ -134,15 +137,15 @@ class SlackChannel(BaseChannel):
             return
 
         try:
-            kwargs: dict[str, Any] = {
-                "channel": chat_id,
-                "text": content,
-                "mrkdwn": True,
-            }
-            if thread_id:
-                kwargs["thread_ts"] = thread_id
-
-            await self._client.chat_postMessage(**kwargs)
+            for chunk in split_message(content, self.MAX_MESSAGE_LENGTH):
+                kwargs: dict[str, Any] = {
+                    "channel": chat_id,
+                    "text": chunk,
+                    "mrkdwn": True,
+                }
+                if thread_id:
+                    kwargs["thread_ts"] = thread_id
+                await self._client.chat_postMessage(**kwargs)
             logger.debug(f"Message sent to Slack channel {chat_id}")
         except Exception as e:
             logger.error(f"Failed to send to Slack: {e}")

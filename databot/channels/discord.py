@@ -5,6 +5,7 @@ from __future__ import annotations
 from loguru import logger
 
 from databot.channels.base import BaseChannel
+from databot.channels.chunking import split_message
 from databot.core.bus import InboundMessage, MessageBus, OutboundMessage
 
 
@@ -125,8 +126,7 @@ class DiscordChannel(BaseChannel):
                 channel = await self._client.fetch_channel(int(chat_id))
 
             # Split long messages (Discord 2000 char limit)
-            chunks = self._split_message(content)
-            for chunk in chunks:
+            for chunk in split_message(content, self.MAX_MESSAGE_LENGTH):
                 await channel.send(chunk)
 
             logger.debug(f"Message sent to Discord channel {chat_id}")
@@ -137,25 +137,3 @@ class DiscordChannel(BaseChannel):
         """Handle outbound messages destined for Discord."""
         if msg.channel == "discord":
             await self.send(msg.chat_id, msg.content, msg.thread_id)
-
-    @classmethod
-    def _split_message(cls, content: str) -> list[str]:
-        """Split a message into chunks that fit Discord's limit."""
-        if len(content) <= cls.MAX_MESSAGE_LENGTH:
-            return [content]
-
-        chunks = []
-        while content:
-            if len(content) <= cls.MAX_MESSAGE_LENGTH:
-                chunks.append(content)
-                break
-
-            # Try to split at a newline
-            split_at = content.rfind("\n", 0, cls.MAX_MESSAGE_LENGTH)
-            if split_at == -1:
-                split_at = cls.MAX_MESSAGE_LENGTH
-
-            chunks.append(content[:split_at])
-            content = content[split_at:].lstrip("\n")
-
-        return chunks

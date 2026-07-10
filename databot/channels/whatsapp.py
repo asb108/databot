@@ -26,6 +26,7 @@ from fastapi import APIRouter, Request
 from loguru import logger
 
 from databot.channels.base import BaseChannel
+from databot.channels.chunking import split_message
 from databot.core.bus import InboundMessage, MessageBus, OutboundMessage
 
 # WhatsApp Cloud API base URL
@@ -38,6 +39,8 @@ class WhatsAppChannel(BaseChannel):
     * Inbound messages arrive via a Meta webhook (``/webhooks/whatsapp``).
     * Outbound messages are sent through the Cloud API ``messages`` endpoint.
     """
+
+    MAX_MESSAGE_LENGTH = 4096
 
     def __init__(
         self,
@@ -80,18 +83,18 @@ class WhatsAppChannel(BaseChannel):
             "Authorization": f"Bearer {self._access_token}",
             "Content-Type": "application/json",
         }
-        payload: dict[str, Any] = {
-            "messaging_product": "whatsapp",
-            "to": chat_id,
-            "type": "text",
-            "text": {"body": content},
-        }
-
         try:
             async with httpx.AsyncClient(timeout=15) as client:
-                resp = await client.post(url, json=payload, headers=headers)
-                resp.raise_for_status()
-                logger.debug(f"Message sent to WhatsApp user {chat_id}")
+                for chunk in split_message(content, self.MAX_MESSAGE_LENGTH):
+                    payload: dict[str, Any] = {
+                        "messaging_product": "whatsapp",
+                        "to": chat_id,
+                        "type": "text",
+                        "text": {"body": chunk},
+                    }
+                    resp = await client.post(url, json=payload, headers=headers)
+                    resp.raise_for_status()
+            logger.debug(f"Message sent to WhatsApp user {chat_id}")
         except Exception as e:
             logger.error(f"Failed to send WhatsApp message: {e}")
 
