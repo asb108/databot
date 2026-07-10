@@ -112,64 +112,69 @@ class RESTConnector(BaseConnector):
                 metadata={"circuit": "open"},
             )
 
-        client = self._client or httpx.AsyncClient(
-            base_url=self._base_url,
-            timeout=self._timeout,
-            auth=self._auth,
-            headers=self._headers,
-        )
-        own_client = self._client is None
+        try:
+            client = self._client or httpx.AsyncClient(
+                base_url=self._base_url,
+                timeout=self._timeout,
+                auth=self._auth,
+                headers=self._headers,
+            )
+            own_client = self._client is None
 
-        last_error = None
-        for attempt in range(1, self._max_retries + 1):
-            try:
-                resp = await client.request(
-                    method,
-                    path,
-                    params=params,
-                    json=json,
-                    data=data,
-                    headers=headers,
-                )
-                resp.raise_for_status()
+            last_error = None
+            for attempt in range(1, self._max_retries + 1):
+                try:
+                    resp = await client.request(
+                        method,
+                        path,
+                        params=params,
+                        json=json,
+                        data=data,
+                        headers=headers,
+                    )
+                    resp.raise_for_status()
 
-                # Parse body
-                content_type = resp.headers.get("content-type", "")
-                if "application/json" in content_type:
-                    body = resp.json()
-                else:
-                    body = resp.text
+                    # Parse body
+                    content_type = resp.headers.get("content-type", "")
+                    if "application/json" in content_type:
+                        body = resp.json()
+                    else:
+                        body = resp.text
 
-                self._breaker.record_success()
-                return ConnectorResult(
-                    success=True, data=body, metadata={"status": resp.status_code}
-                )
-
-            except httpx.HTTPStatusError as e:
-                # Don't retry 4xx (except 429)
-                if 400 <= e.response.status_code < 500 and e.response.status_code != 429:
                     self._breaker.record_success()
                     return ConnectorResult(
-                        success=False,
-                        error=f"HTTP {e.response.status_code}: {e.response.text[:500]}",
-                        metadata={"status": e.response.status_code},
+                        success=True, data=body, metadata={"status": resp.status_code}
                     )
-                last_error = str(e)
-            except (httpx.ConnectError, httpx.TimeoutException) as e:
-                last_error = str(e)
 
-            if attempt < self._max_retries:
-                delay = 2 ** (attempt - 1)
-                logger.debug(f"REST retry {attempt}/{self._max_retries} for {path} in {delay}s")
-                await asyncio.sleep(delay)
+                except httpx.HTTPStatusError as e:
+                    # Don't retry 4xx (except 429)
+                    if 400 <= e.response.status_code < 500 and e.response.status_code != 429:
+                        self._breaker.record_success()
+                        return ConnectorResult(
+                            success=False,
+                            error=f"HTTP {e.response.status_code}: {e.response.text[:500]}",
+                            metadata={"status": e.response.status_code},
+                        )
+                    last_error = str(e)
+                except (httpx.ConnectError, httpx.TimeoutException) as e:
+                    last_error = str(e)
 
-        if own_client:
-            await client.aclose()
+                if attempt < self._max_retries:
+                    delay = 2 ** (attempt - 1)
+                    logger.debug(f"REST retry {attempt}/{self._max_retries} for {path} in {delay}s")
+                    await asyncio.sleep(delay)
 
-        self._breaker.record_failure()
-        return ConnectorResult(
-            success=False, error=f"Request failed after {self._max_retries} attempts: {last_error}"
-        )
+            if own_client:
+                await client.aclose()
+
+            self._breaker.record_failure()
+            return ConnectorResult(
+                success=False,
+                error=f"Request failed after {self._max_retries} attempts: {last_error}",
+            )
+        except Exception:
+            self._breaker.record_failure()
+            raise
 
     # ------------------------------------------------------------------
     # Convenience operations (dispatched by BaseConnector.execute)

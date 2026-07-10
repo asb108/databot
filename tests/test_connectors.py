@@ -309,6 +309,23 @@ class TestRESTCircuitBreaker:
         await conn._client.aclose()
 
     @pytest.mark.asyncio
+    async def test_5xx_trips_breaker(self):
+        calls = {"n": 0}
+
+        def handler(request):
+            calls["n"] += 1
+            return httpx.Response(503, text="unavailable")
+
+        conn = _rest_with_transport(handler, failure_threshold=2)
+        await conn.request("GET", "/x")
+        await conn.request("GET", "/x")
+        assert conn._breaker.state == CircuitState.OPEN
+        r3 = await conn.request("GET", "/x")
+        assert r3.metadata.get("circuit") == "open"
+        assert calls["n"] == 2  # third call fast-failed, no transport hit
+        await conn._client.aclose()
+
+    @pytest.mark.asyncio
     async def test_4xx_does_not_trip(self):
         calls = {"n": 0}
 
