@@ -7,7 +7,10 @@ import uuid
 from pathlib import Path
 
 import typer
+from loguru import logger
 from rich.console import Console
+
+from databot.core.error_ux import render_user_error
 
 app = typer.Typer(
     name="databot",
@@ -826,9 +829,13 @@ async def _process_single(cfg, message: str) -> str:
         extra_context = ""
         if rag_context:
             extra_context = rag_context.enrich_prompt(message)
-        result = await delegator.handle(
-            message, extra_context=extra_context, session_key="cli:direct"
-        )
+        try:
+            result = await delegator.handle(
+                message, extra_context=extra_context, session_key="cli:direct"
+            )
+        except Exception as e:
+            logger.error(f"CLI single-shot error: {e}")
+            result = render_user_error(e)
         if connector_registry:
             await connector_registry.disconnect_all()
         return result
@@ -850,7 +857,11 @@ async def _process_single(cfg, message: str) -> str:
         slash_handler=slash_handler,
     )
 
-    result = await loop.process_direct(message)
+    try:
+        result = await loop.process_direct(message)
+    except Exception as e:
+        logger.error(f"CLI single-shot error: {e}")
+        result = render_user_error(e)
 
     if connector_registry:
         await connector_registry.disconnect_all()

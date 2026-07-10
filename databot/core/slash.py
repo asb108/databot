@@ -12,6 +12,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from loguru import logger
+
+from databot.core.error_ux import render_user_error
+
 _HELP = {
     "help": "Show this help",
     "clear": "Clear this conversation's history",
@@ -110,7 +114,8 @@ class SlashCommandHandler:
         try:
             health = await self._connectors.health_check_all()
         except Exception as e:
-            return f"Could not check connector health: {e}"
+            logger.error(f"Slash /status health check failed: {e}")
+            return render_user_error(e)
         if not health:
             return "No connectors configured."
         lines = ["**Connector status:**"]
