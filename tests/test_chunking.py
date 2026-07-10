@@ -56,3 +56,32 @@ def test_default_max_chunks_is_ten():
     content = "\n".join("x" * 40 for _ in range(50))
     chunks = split_message(content, 50)
     assert len(chunks) == MAX_CHUNKS
+
+
+def test_consecutive_newlines_preserve_text_and_a_blank_line():
+    content = "a" * 44 + "\n\n\n" + "b" * 44
+    chunks = split_message(content, 45)
+    assert sum(c.count("a") for c in chunks) == 44  # no text lost
+    assert sum(c.count("b") for c in chunks) == 44
+    assert (
+        sum(c.count("\n") for c in chunks) >= 1
+    )  # a blank-line newline survives (old code dropped all)
+
+
+def test_all_newlines_terminates_and_within_limit():
+    chunks = split_message("\n" * 100, 50)  # must not hang
+    assert len(chunks) >= 1
+    assert all(len(c) <= 50 for c in chunks)
+
+
+def test_truncated_chunk_never_exceeds_tiny_limit():
+    chunks = split_message("x" * 500, 10, max_chunks=2)
+    assert len(chunks) == 2
+    assert all(len(c) <= 10 for c in chunks)  # notice can't push last chunk over limit
+
+
+def test_nonpositive_limit_raises():
+    import pytest
+
+    with pytest.raises(ValueError):
+        split_message("ab", 0)

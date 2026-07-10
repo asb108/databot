@@ -16,11 +16,14 @@ def split_message(content: str, limit: int, *, max_chunks: int = MAX_CHUNKS) -> 
     """Split ``content`` into chunks no longer than ``limit`` characters.
 
     Prefers splitting on newlines within the limit; hard-cuts a line that has no
-    newline within the limit. Returns at most ``max_chunks`` chunks; if more would be
-    needed, the last kept chunk is marked with a truncation notice. Every returned
-    chunk is non-empty and ``len(chunk) <= limit``. Precondition: ``limit`` is at least
-    ``len(_TRUNCATION_NOTICE)`` (true for every real channel limit).
+    newline within the limit. Consumes exactly one delimiter newline per split, so
+    blank lines between paragraphs are preserved. Returns at most ``max_chunks``
+    chunks; if more would be needed, the last kept chunk is marked with a truncation
+    notice. Every returned chunk is non-empty and ``len(chunk) <= limit`` (the empty
+    string is returned verbatim as ``[""]``). Raises ``ValueError`` if ``limit < 1``.
     """
+    if limit < 1:
+        raise ValueError("limit must be a positive integer")
     if len(content) <= limit:
         return [content]
 
@@ -31,10 +34,15 @@ def split_message(content: str, limit: int, *, max_chunks: int = MAX_CHUNKS) -> 
             chunks.append(remaining)
             break
         split_at = remaining.rfind("\n", 0, limit)
-        if split_at <= 0:  # no newline, or one at index 0 (would yield an empty chunk)
-            split_at = limit
-        chunks.append(remaining[:split_at])
-        remaining = remaining[split_at:].lstrip("\n")
+        if split_at <= 0:
+            # No newline within the window (or one at index 0): hard-cut.
+            chunks.append(remaining[:limit])
+            remaining = remaining[limit:]
+        else:
+            # Split on the newline, consuming exactly that one delimiter newline
+            # so adjacent blank lines are preserved.
+            chunks.append(remaining[:split_at])
+            remaining = remaining[split_at + 1 :]
 
     if len(chunks) <= max_chunks:
         return chunks
@@ -42,6 +50,6 @@ def split_message(content: str, limit: int, *, max_chunks: int = MAX_CHUNKS) -> 
     kept = chunks[:max_chunks]
     last = kept[-1]
     if len(last) + len(_TRUNCATION_NOTICE) > limit:
-        last = last[: limit - len(_TRUNCATION_NOTICE)]
-    kept[-1] = last + _TRUNCATION_NOTICE
+        last = last[: max(0, limit - len(_TRUNCATION_NOTICE))]
+    kept[-1] = (last + _TRUNCATION_NOTICE)[:limit]
     return kept
