@@ -18,6 +18,7 @@ from databot.connectors.base import (
     ConnectorStatus,
     ConnectorType,
 )
+from databot.connectors.circuit_breaker import CircuitBreaker
 
 
 class RESTConnector(BaseConnector):
@@ -31,6 +32,14 @@ class RESTConnector(BaseConnector):
         self._auth = self._build_auth()
         self._headers = self._build_headers()
         self._client: httpx.AsyncClient | None = None
+
+        cb = self._config.get("circuit_breaker", {})
+        self._breaker = CircuitBreaker(
+            name,
+            failure_threshold=cb.get("failure_threshold", 5),
+            recovery_timeout=cb.get("recovery_timeout", 30.0),
+            enabled=cb.get("enabled", True),
+        )
 
     @property
     def connector_type(self) -> ConnectorType:
@@ -93,6 +102,16 @@ class RESTConnector(BaseConnector):
             headers: Extra headers.
             raw_response: If True, return the raw response text/json in ``data``.
         """
+        if not self._breaker.allow():
+            return ConnectorResult(
+                success=False,
+                error=(
+                    f"Circuit breaker open for '{self._name}': upstream repeatedly failing. "
+                    f"Retries are paused for up to {self._breaker.recovery_timeout:.0f}s."
+                ),
+                metadata={"circuit": "open"},
+            )
+
         client = self._client or httpx.AsyncClient(
             base_url=self._base_url,
             timeout=self._timeout,
@@ -121,6 +140,7 @@ class RESTConnector(BaseConnector):
                 else:
                     body = resp.text
 
+                self._breaker.record_success()
                 return ConnectorResult(
                     success=True, data=body, metadata={"status": resp.status_code}
                 )
@@ -128,6 +148,7 @@ class RESTConnector(BaseConnector):
             except httpx.HTTPStatusError as e:
                 # Don't retry 4xx (except 429)
                 if 400 <= e.response.status_code < 500 and e.response.status_code != 429:
+                    self._breaker.record_success()
                     return ConnectorResult(
                         success=False,
                         error=f"HTTP {e.response.status_code}: {e.response.text[:500]}",
@@ -145,6 +166,7 @@ class RESTConnector(BaseConnector):
         if own_client:
             await client.aclose()
 
+        self._breaker.record_failure()
         return ConnectorResult(
             success=False, error=f"Request failed after {self._max_retries} attempts: {last_error}"
         )

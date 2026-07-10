@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+import httpx
 import pytest
 
 from databot.connectors.base import (
@@ -13,8 +14,10 @@ from databot.connectors.base import (
     ConnectorStatus,
     ConnectorType,
 )
+from databot.connectors.circuit_breaker import CircuitBreaker, CircuitState
 from databot.connectors.factory import create_connector
 from databot.connectors.registry import ConnectorRegistry
+from databot.connectors.rest_connector import RESTConnector
 
 # ---------------------------------------------------------------------------
 # ConnectorResult
@@ -254,3 +257,92 @@ class TestConnectorFactory:
         assert conn_s.connector_type == ConnectorType.PROCESSING
         conn_k = create_connector("k", {"type": "streaming"})
         assert conn_k.connector_type == ConnectorType.STREAMING
+
+
+# ---------------------------------------------------------------------------
+# REST connector circuit breaker
+# ---------------------------------------------------------------------------
+
+
+def _rest_with_transport(handler, *, clock=None, **cb):
+    """Build a RESTConnector whose HTTP client uses a MockTransport handler.
+
+    `cb` becomes the `circuit_breaker` config. When `clock` (a {"t": float} dict)
+    is given, the breaker is rebuilt with an injectable time_func so recovery can
+    be tested without real sleeps. max_retries=1 => the retry loop never sleeps.
+    """
+    conn = RESTConnector(
+        "api",
+        {"base_url": "http://test.local", "max_retries": 1, "circuit_breaker": cb},
+    )
+    conn._client = httpx.AsyncClient(
+        base_url="http://test.local", transport=httpx.MockTransport(handler)
+    )
+    if clock is not None:
+        conn._breaker = CircuitBreaker(
+            "api",
+            failure_threshold=cb.get("failure_threshold", 5),
+            recovery_timeout=cb.get("recovery_timeout", 30.0),
+            time_func=lambda: clock["t"],
+        )
+    return conn
+
+
+class TestRESTCircuitBreaker:
+    @pytest.mark.asyncio
+    async def test_opens_and_fast_fails(self):
+        calls = {"n": 0}
+
+        def handler(request):
+            calls["n"] += 1
+            raise httpx.ConnectError("down")
+
+        conn = _rest_with_transport(handler, failure_threshold=2)
+        r1 = await conn.request("GET", "/x")
+        r2 = await conn.request("GET", "/x")
+        assert r1.success is False and r2.success is False
+        assert conn._breaker.state == CircuitState.OPEN
+        r3 = await conn.request("GET", "/x")
+        assert r3.success is False
+        assert r3.metadata.get("circuit") == "open"
+        assert calls["n"] == 2  # the third call never reached the transport
+        await conn._client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_4xx_does_not_trip(self):
+        calls = {"n": 0}
+
+        def handler(request):
+            calls["n"] += 1
+            return httpx.Response(404, text="nope")
+
+        conn = _rest_with_transport(handler, failure_threshold=2)
+        for _ in range(4):
+            r = await conn.request("GET", "/missing")
+            assert r.success is False
+        assert conn._breaker.state == CircuitState.CLOSED
+        assert calls["n"] == 4  # every call reached the transport (never tripped)
+        await conn._client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_recovers_after_cooldown(self):
+        clock = {"t": 0.0}
+        state = {"fail": True}
+
+        def handler(request):
+            if state["fail"]:
+                raise httpx.ConnectError("down")
+            return httpx.Response(200, json={"ok": True})
+
+        conn = _rest_with_transport(
+            handler, clock=clock, failure_threshold=2, recovery_timeout=30.0
+        )
+        await conn.request("GET", "/x")
+        await conn.request("GET", "/x")
+        assert conn._breaker.state == CircuitState.OPEN
+        state["fail"] = False           # upstream recovers
+        clock["t"] = 30.0               # advance past cooldown
+        r = await conn.request("GET", "/x")
+        assert r.success is True
+        assert conn._breaker.state == CircuitState.CLOSED
+        await conn._client.aclose()
