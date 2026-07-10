@@ -61,13 +61,20 @@ class CircuitBreaker:
             return True
         if self._state == CircuitState.CLOSED:
             return True
-        if self._state == CircuitState.OPEN:
-            if self._time_func() - self._opened_at >= self._recovery_timeout:
-                self._state = CircuitState.HALF_OPEN
+        # OPEN, or a HALF_OPEN whose trial never reported back (e.g. its coroutine
+        # was cancelled): gate on the cooldown clock so a lost trial self-heals.
+        if self._time_func() - self._opened_at >= self._recovery_timeout:
+            was = self._state
+            self._state = CircuitState.HALF_OPEN
+            self._opened_at = self._time_func()  # anchor the trial watchdog
+            if was == CircuitState.OPEN:
                 logger.info(f"Circuit breaker '{self._name}': half-open — trialing one request.")
-                return True
-            return False
-        # HALF_OPEN: a trial is already outstanding.
+            else:
+                logger.warning(
+                    f"Circuit breaker '{self._name}': half-open trial did not report back "
+                    f"within {self._recovery_timeout:.0f}s — retrying one request."
+                )
+            return True
         return False
 
     def record_success(self) -> None:
@@ -83,6 +90,10 @@ class CircuitBreaker:
             return
         if self._state == CircuitState.HALF_OPEN:
             self._trip()
+            return
+        if self._state == CircuitState.OPEN:
+            # Already open; ignore late in-flight failures so they neither extend
+            # the cooldown nor inflate the failure count.
             return
         self._failures += 1
         if self._failures >= self._failure_threshold:

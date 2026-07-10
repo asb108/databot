@@ -85,3 +85,23 @@ class TestCircuitBreaker:
         b.record_failure()
         b.record_failure()
         assert b.state == CircuitState.CLOSED  # only 2 failures since the reset
+
+    def test_half_open_watchdog_recovers_from_lost_trial(self):
+        b, clock = _breaker(failure_threshold=1, recovery_timeout=30.0)
+        b.record_failure()            # OPEN at t=0
+        clock["t"] = 30.0
+        assert b.allow() is True      # grant trial -> HALF_OPEN, anchored at t=30
+        assert b.state == CircuitState.HALF_OPEN
+        assert b.allow() is False     # concurrent caller fast-fails (single trial)
+        # trial coroutine is "lost" (cancelled) and never records; watchdog kicks in:
+        clock["t"] = 60.0
+        assert b.allow() is True      # fresh trial granted after another cooldown
+        assert b.state == CircuitState.HALF_OPEN
+
+    def test_open_ignores_late_failures(self):
+        b, clock = _breaker(failure_threshold=1, recovery_timeout=30.0)
+        b.record_failure()            # OPEN at t=0
+        clock["t"] = 10.0
+        b.record_failure()            # late in-flight failure; must NOT push the timer
+        clock["t"] = 30.0
+        assert b.allow() is True      # 30 - 0 >= 30 -> trial granted (timer stayed at t=0)
