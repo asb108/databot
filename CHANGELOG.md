@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `hint`/`retryable`. Closes raw-error leaks in the CLI single-shot path, the
   HTTP `/message` + `/stream` endpoints, and the `/status` slash command; adds a
   top-level guard to the streaming loop.
+- **Connector circuit breaker:** `RESTConnector` now fast-fails while an upstream is
+  down instead of paying the full retry+backoff budget on every call. A per-connector
+  3-state breaker (`databot/connectors/circuit_breaker.py`) opens after
+  `failure_threshold` consecutive failures (default 5), fast-fails for
+  `recovery_timeout` seconds (default 30), then trials one request to test recovery.
+  A 4xx response counts as reachable and never trips it. On by default; configure or
+  disable via a connector's `circuit_breaker` config (`enabled`, `failure_threshold`,
+  `recovery_timeout`).
 
 ### Added — Channels & testing
 - **WhatsApp webhook signature verification** — the `/webhooks/whatsapp` POST handler now verifies Meta's `X-Hub-Signature-256` (HMAC-SHA256 of the raw body keyed by `app_secret`); enforced when `app_secret` is set, skipped otherwise for back-compat.
