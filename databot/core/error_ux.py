@@ -24,7 +24,7 @@ _CLASSES: list[tuple[tuple[str, ...], tuple[str, ...], str, bool]] = [
     # 1. auth / config
     (
         ("authenticationerror", "api key", "unauthorized", "permission denied", "forbidden"),
-        ("permissionerror",),
+        ("permissionerror", "authenticationerror"),
         "I'm not configured correctly to do that (authentication failed). "
         "Please contact an administrator.",
         False,

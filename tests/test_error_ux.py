@@ -53,6 +53,20 @@ class TestClassifier:
         out = render_user_error(RuntimeError("AuthenticationError: connection to api failed"))
         assert "authentication failed" in out.lower()
 
+    def test_auth_by_type_name_no_keyword(self):
+        # type name is AuthenticationError but message has no auth keyword -> still auth
+        class AuthenticationError(Exception):
+            pass
+
+        out = render_user_error(AuthenticationError("401 from provider"))
+        assert "authentication failed" in out.lower()
+        assert RETRY_SUFFIX not in out
+
+    def test_order_timeout_beats_network(self):
+        # "connection timeout" contains a network substring but must classify as timeout
+        out = render_user_error(RuntimeError("connection timeout"))
+        assert "too long" in out.lower()
+
 
 class TestToolErrorRendering:
     def test_plain(self):
