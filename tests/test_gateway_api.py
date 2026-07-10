@@ -32,12 +32,22 @@ class _FakeRegistry:
         return []
 
 
-def _build(tmp_path: Path, *, connector_registry=None, rate_limit_rpm=0, configure_cfg=None):
+def _build(
+    tmp_path: Path,
+    *,
+    connector_registry=None,
+    rate_limit_rpm=0,
+    configure_cfg=None,
+    loop=None,
+):
     """Construct a minimal-but-real gateway app for testing.
 
     ``configure_cfg`` is an optional callback ``(cfg) -> None`` to mutate the
     config after the test defaults are applied (e.g. inject a secret to assert
     masking).
+
+    ``loop`` lets a test supply its own agent-loop stub (e.g. one whose
+    ``process_message`` raises) in place of the default ``MagicMock()``.
     """
     cfg = DatabotConfig()
     cfg.gateway.api_keys = []  # open mode -> auth middleware no-ops
@@ -68,7 +78,7 @@ def _build(tmp_path: Path, *, connector_registry=None, rate_limit_rpm=0, configu
         skill_registry=skill_registry,
         usage_tracker=usage_tracker,
         monitor_service=monitor_service,
-        loop=MagicMock(),
+        loop=loop if loop is not None else MagicMock(),
         metrics=metrics,
         audit_log=audit_log,
         channels=None,
@@ -200,3 +210,17 @@ def test_get_channels_config_masks_secrets(tmp_path):
     assert "channels" in body and "slack" in body["channels"]
     assert secret not in json.dumps(body)  # raw secret never leaks
     assert body["channels"]["slack"]["bot_token"] == "xoxb****5678"
+
+
+def test_message_endpoint_sanitizes_error(tmp_path):
+    class _BoomLoop:
+        async def process_message(self, msg):
+            raise RuntimeError("driver failure token-abc123")
+
+    client = TestClient(_build(tmp_path, loop=_BoomLoop()))
+
+    resp = client.post("/api/v1/message", json={"message": "hi"})
+    assert resp.status_code == 500
+    body = resp.json()
+    assert "token-abc123" not in body["error"]
+    assert "internal error" in body["error"].lower()

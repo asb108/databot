@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger  # used by moved route closures (post_message, config PUT, ...)
 
+from databot.core.error_ux import render_user_error
 from databot.middleware.auth import APIKeyAuthMiddleware
 from databot.middleware.rate_limit import RateLimitMiddleware
 
@@ -140,13 +141,7 @@ def build_api(
             return {"response": response.content if response else ""}
         except Exception as e:
             logger.error(f"Message processing error: {e}")
-            err_msg = str(e)
-            if "API Key" in err_msg or "AuthenticationError" in err_msg:
-                err_msg = (
-                    "LLM API key not configured. Set ANTHROPIC_API_KEY "
-                    "environment variable or run 'databot init'."
-                )
-            return JSONResponse({"error": err_msg}, status_code=500)
+            return JSONResponse({"error": render_user_error(e)}, status_code=500)
 
     @api.post("/api/v1/stream")
     async def post_message_stream(request: dict):
@@ -191,15 +186,10 @@ def build_api(
                         ),
                     }
             except Exception as e:
-                err_msg = str(e)
-                if "API Key" in err_msg or "AuthenticationError" in err_msg:
-                    err_msg = (
-                        "LLM API key not configured. Set ANTHROPIC_API_KEY "
-                        "environment variable or run 'databot init'."
-                    )
+                logger.error(f"Streaming endpoint error: {e}")
                 yield {
                     "event": "error",
-                    "data": _json.dumps({"type": "error", "data": err_msg}),
+                    "data": _json.dumps({"type": "error", "data": render_user_error(e)}),
                 }
 
         return EventSourceResponse(_event_generator())
