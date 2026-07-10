@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 
-import pytest
-
 from databot.core.error_ux import render_user_error
 from databot.tools.errors import ErrorCode, ToolError
 

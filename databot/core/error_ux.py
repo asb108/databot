@@ -33,21 +33,21 @@ _CLASSES: list[tuple[tuple[str, ...], tuple[str, ...], str, bool]] = [
     (
         ("rate limit", "too many requests", "429"),
         (),
-        "The service is busy at the moment. Please wait a few seconds and try again.",
+        "The service is busy at the moment.",
         True,
     ),
     # 3. timeout
     (
         ("timed out", "timeout"),
         ("timeouterror",),
-        "That took too long to complete. Please try again.",
+        "That took too long to complete.",
         True,
     ),
     # 4. network / connection
     (
         ("connection", "network", "unreachable", "refused"),
         ("connectionerror", "connecterror", "connecttimeout", "readtimeout", "transporterror"),
-        "I'm having trouble reaching a service right now. Please try again shortly.",
+        "I'm having trouble reaching a service right now.",
         True,
     ),
 ]
