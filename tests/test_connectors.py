@@ -363,3 +363,82 @@ class TestRESTCircuitBreaker:
         assert r.success is True
         assert conn._breaker.state == CircuitState.CLOSED
         await conn._client.aclose()
+
+
+# ---------------------------------------------------------------------------
+# REST connector transient-client lifecycle (own_client cleanup)
+# ---------------------------------------------------------------------------
+
+
+class _LifecycleResp:
+    status_code = 200
+    headers = {"content-type": "application/json"}
+
+    def __init__(self, status=200):
+        self.status_code = status
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError("err", request=None, response=self)
+
+    def json(self):
+        return {"ok": True}
+
+    @property
+    def text(self):
+        return "body"
+
+
+class _LifecycleClient:
+    """Fake httpx client that records aclose() and returns a configurable response."""
+
+    def __init__(self, closed, status=200):
+        self._closed = closed
+        self._status = status
+
+    async def request(self, *args, **kwargs):
+        return _LifecycleResp(self._status)
+
+    async def aclose(self):
+        self._closed["n"] += 1
+
+
+class TestRESTClientLifecycle:
+    @pytest.mark.asyncio
+    async def test_transient_client_closed_on_success(self, monkeypatch):
+        from databot.connectors import rest_connector as rc_mod
+        from databot.connectors.rest_connector import RESTConnector
+
+        closed = {"n": 0}
+        monkeypatch.setattr(
+            rc_mod.httpx, "AsyncClient", lambda *a, **k: _LifecycleClient(closed)
+        )
+        conn = RESTConnector("api", {"base_url": "http://x"})  # no connect() => own client
+        result = await conn.request("GET", "/health")
+        assert result.success is True
+        assert closed["n"] == 1  # transient client was closed on the success path
+
+    @pytest.mark.asyncio
+    async def test_transient_client_closed_on_4xx(self, monkeypatch):
+        from databot.connectors import rest_connector as rc_mod
+        from databot.connectors.rest_connector import RESTConnector
+
+        closed = {"n": 0}
+        monkeypatch.setattr(
+            rc_mod.httpx, "AsyncClient", lambda *a, **k: _LifecycleClient(closed, status=404)
+        )
+        conn = RESTConnector("api", {"base_url": "http://x", "max_retries": 1})
+        result = await conn.request("GET", "/missing")
+        assert result.success is False
+        assert closed["n"] == 1  # transient client closed on the 4xx early-return path
+
+    @pytest.mark.asyncio
+    async def test_persistent_client_not_closed(self, monkeypatch):
+        from databot.connectors.rest_connector import RESTConnector
+
+        closed = {"n": 0}
+        conn = RESTConnector("api", {"base_url": "http://x"})
+        conn._client = _LifecycleClient(closed)  # persistent client (as if connect() ran)
+        result = await conn.request("GET", "/health")
+        assert result.success is True
+        assert closed["n"] == 0  # persistent client must be left open for reuse

@@ -112,15 +112,15 @@ class RESTConnector(BaseConnector):
                 metadata={"circuit": "open"},
             )
 
-        try:
-            client = self._client or httpx.AsyncClient(
-                base_url=self._base_url,
-                timeout=self._timeout,
-                auth=self._auth,
-                headers=self._headers,
-            )
-            own_client = self._client is None
+        client = self._client or httpx.AsyncClient(
+            base_url=self._base_url,
+            timeout=self._timeout,
+            auth=self._auth,
+            headers=self._headers,
+        )
+        own_client = self._client is None
 
+        try:
             last_error = None
             for attempt in range(1, self._max_retries + 1):
                 try:
@@ -164,9 +164,6 @@ class RESTConnector(BaseConnector):
                     logger.debug(f"REST retry {attempt}/{self._max_retries} for {path} in {delay}s")
                     await asyncio.sleep(delay)
 
-            if own_client:
-                await client.aclose()
-
             self._breaker.record_failure()
             return ConnectorResult(
                 success=False,
@@ -175,6 +172,10 @@ class RESTConnector(BaseConnector):
         except Exception:
             self._breaker.record_failure()
             raise
+        finally:
+            # Close a client we created for this call (leave a persistent one open).
+            if own_client:
+                await client.aclose()
 
     # ------------------------------------------------------------------
     # Convenience operations (dispatched by BaseConnector.execute)
