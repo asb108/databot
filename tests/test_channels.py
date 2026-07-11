@@ -23,6 +23,8 @@ class _RecordingHTTPClient:
         self._calls.append(kwargs)
 
         class _Resp:
+            status_code = 200
+
             def raise_for_status(self):
                 return None
 
@@ -575,3 +577,76 @@ class TestChannelChunking:
         assert len(posts) == 3
         for call in posts:
             assert len(call.args[0]) <= DiscordChannel.MAX_MESSAGE_LENGTH
+
+
+class TestTelegramMarkdownFallback:
+    @pytest.mark.asyncio
+    async def test_retries_without_parse_mode_on_400(self, monkeypatch):
+        """A 400 (e.g. malformed Markdown) triggers a plain-text resend of that chunk."""
+        from databot.channels import telegram as tg_mod
+        from databot.channels.telegram import TelegramChannel
+
+        posts: list = []
+
+        class _Resp:
+            def __init__(self, status):
+                self.status_code = status
+
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise RuntimeError(f"HTTP {self.status_code}")
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def post(self, url, **kwargs):
+                posts.append(dict(kwargs["json"]))  # snapshot, not a live reference
+                # First attempt (with parse_mode) fails; plain-text retry succeeds.
+                if "parse_mode" in kwargs["json"]:
+                    return _Resp(400)
+                return _Resp(200)
+
+        monkeypatch.setattr(tg_mod.httpx, "AsyncClient", lambda *a, **k: _Client())
+        channel = TelegramChannel(bus=MessageBus(), bot_token="fake:token")
+        await channel.send("123", "*unbalanced markdown")
+
+        assert len(posts) == 2  # markdown attempt + plain-text retry
+        assert posts[0].get("parse_mode") == "Markdown"
+        assert "parse_mode" not in posts[1]
+        assert posts[1]["text"] == "*unbalanced markdown"
+
+    @pytest.mark.asyncio
+    async def test_no_retry_when_first_attempt_succeeds(self, monkeypatch):
+        """A normal 200 send makes exactly one request (no spurious retry)."""
+        from databot.channels import telegram as tg_mod
+        from databot.channels.telegram import TelegramChannel
+
+        posts: list = []
+
+        class _Resp:
+            status_code = 200
+
+            def raise_for_status(self):
+                return None
+
+        class _Client:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def post(self, url, **kwargs):
+                posts.append(kwargs["json"])
+                return _Resp()
+
+        monkeypatch.setattr(tg_mod.httpx, "AsyncClient", lambda *a, **k: _Client())
+        channel = TelegramChannel(bus=MessageBus(), bot_token="fake:token")
+        await channel.send("123", "hello")
+
+        assert len(posts) == 1
+        assert posts[0]["parse_mode"] == "Markdown"

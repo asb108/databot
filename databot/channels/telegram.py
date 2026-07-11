@@ -135,6 +135,12 @@ class TelegramChannel(BaseChannel):
                     if thread_id:
                         payload["reply_to_message_id"] = thread_id
                     resp = await client.post(url, json=payload)
+                    if resp.status_code == 400:
+                        # Telegram rejects malformed Markdown (e.g. an entity split
+                        # across a chunk boundary) with 400. Resend this chunk as plain
+                        # text so it still delivers instead of being dropped.
+                        plain = {k: v for k, v in payload.items() if k != "parse_mode"}
+                        resp = await client.post(url, json=plain)
                     resp.raise_for_status()
             logger.debug(f"Message sent to Telegram chat {chat_id}")
         except Exception as e:
