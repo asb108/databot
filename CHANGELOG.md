@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   newline boundaries, hard-cuts overlong lines, and caps output at 10 chunks with a
   "…(response truncated)" notice. Applied to Telegram (4096), WhatsApp (4096), Google
   Chat (4096), and Slack (40000); Discord's existing splitter now uses the shared helper.
+  Telegram additionally resends a chunk as plain text if `parse_mode: Markdown` rejects
+  it (400) — e.g. a markdown entity split across a chunk boundary — so it still delivers.
 
 ### Added — Channels & testing
 - **WhatsApp webhook signature verification** — the `/webhooks/whatsapp` POST handler now verifies Meta's `X-Hub-Signature-256` (HMAC-SHA256 of the raw body keyed by `app_secret`); enforced when `app_secret` is set, skipped otherwise for back-compat.
