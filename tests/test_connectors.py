@@ -442,3 +442,23 @@ class TestRESTClientLifecycle:
         result = await conn.request("GET", "/health")
         assert result.success is True
         assert closed["n"] == 0  # persistent client must be left open for reuse
+
+    @pytest.mark.asyncio
+    async def test_transient_client_closed_on_unexpected_exception(self, monkeypatch):
+        from databot.connectors import rest_connector as rc_mod
+        from databot.connectors.rest_connector import RESTConnector
+
+        closed = {"n": 0}
+
+        class _BoomClient:
+            async def request(self, *args, **kwargs):
+                raise ValueError("boom")
+
+            async def aclose(self):
+                closed["n"] += 1
+
+        monkeypatch.setattr(rc_mod.httpx, "AsyncClient", lambda *a, **k: _BoomClient())
+        conn = RESTConnector("api", {"base_url": "http://x", "max_retries": 1})
+        with pytest.raises(ValueError):
+            await conn.request("GET", "/x")
+        assert closed["n"] == 1  # finally closed the transient client on the re-raise path

@@ -112,6 +112,9 @@ class RESTConnector(BaseConnector):
                 metadata={"circuit": "open"},
             )
 
+        # Built outside the breaker guard below so a client-construction error (a local
+        # config problem, not an upstream failure) surfaces directly instead of counting
+        # toward the breaker; the try/finally then guarantees the client is closed.
         client = self._client or httpx.AsyncClient(
             base_url=self._base_url,
             timeout=self._timeout,
